@@ -114,29 +114,16 @@ class RobotPose:
         self.accuracy = min(1.0, self.accuracy + 0.3)
 
 
-def closest_point_on_segment(px, py, ax, ay, bx, by):
-    dx, dy = bx - ax, by - ay
-    seg_len_sq = dx * dx + dy * dy
-    if seg_len_sq == 0:
-        return ax, ay
-    t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / seg_len_sq))
-    return ax + t * dx, ay + t * dy
-
-
 def closest_point_on_rounded_rect(px, py, cx, cy, half_len, half_wid, corner_r, heading_rad):
     cos_h = math.cos(-heading_rad)
     sin_h = math.sin(-heading_rad)
     lx = (px - cx) * cos_h - (py - cy) * sin_h
     ly = (px - cx) * sin_h + (py - cy) * cos_h
-
     inner_half_len = half_len - corner_r
     inner_half_wid = half_wid - corner_r
-
     clamped_x = max(-inner_half_len, min(inner_half_len, lx))
     clamped_y = max(-inner_half_wid, min(inner_half_wid, ly))
-
-    ox = lx - clamped_x
-    oy = ly - clamped_y
+    ox, oy = lx - clamped_x, ly - clamped_y
     olen = math.sqrt(ox * ox + oy * oy)
     if olen > 0:
         scale = corner_r / olen
@@ -147,7 +134,6 @@ def closest_point_on_rounded_rect(px, py, cx, cy, half_len, half_wid, corner_r, 
         surface_lx = clamped_x + corner_r
         surface_ly = clamped_y
         inside = True
-
     cos_fwd = math.cos(heading_rad)
     sin_fwd = math.sin(heading_rad)
     wx = cx + surface_lx * cos_fwd - surface_ly * sin_fwd
@@ -155,98 +141,48 @@ def closest_point_on_rounded_rect(px, py, cx, cy, half_len, half_wid, corner_r, 
     return wx, wy, inside
 
 
-def ball_inside_rounded_rect(px, py, cx, cy, half_len, half_wid, corner_r, heading_rad):
-    cos_h = math.cos(-heading_rad)
-    sin_h = math.sin(-heading_rad)
-    lx = (px - cx) * cos_h - (py - cy) * sin_h
-    ly = (px - cx) * sin_h + (py - cy) * cos_h
-    inner_half_len = half_len - corner_r
-    inner_half_wid = half_wid - corner_r
-    clamped_x = max(-inner_half_len, min(inner_half_len, lx))
-    clamped_y = max(-inner_half_wid, min(inner_half_wid, ly))
-    dx = lx - clamped_x
-    dy = ly - clamped_y
-    return math.sqrt(dx * dx + dy * dy) <= corner_r
-
-
 def field_boundary_response(bx, by, vx, vy, radius):  # noqa
     half_len = FIELD_LENGTH_MM / 2
     half_wid = FIELD_WIDTH_MM / 2
     goal_half = GOAL_WIDTH_MM / 2
-    goal_depth = GOAL_DEPTH_MM
-    in_left_goal = bx < -half_len and abs(by) < goal_half
-    in_right_goal = bx > half_len and abs(by) < goal_half
-    new_bx, new_by, new_vx, new_vy = bx, by, vx, vy
-    if in_left_goal:
-        left_wall = -half_len - goal_depth
-        top_wall = -goal_half
-        bot_wall = goal_half
-        if new_bx - radius < left_wall:
-            new_bx = left_wall + radius
-            new_vx = abs(new_vx) * RESTITUTION
-        if new_by - radius < top_wall:
-            new_by = top_wall + radius
-            new_vy = abs(new_vy) * RESTITUTION
-        if new_by + radius > bot_wall:
-            new_by = bot_wall - radius
-            new_vy = -abs(new_vy) * RESTITUTION
-        return new_bx, new_by, new_vx, new_vy
-    if in_right_goal:
-        right_wall = half_len + goal_depth
-        top_wall = -goal_half
-        bot_wall = goal_half
-        if new_bx + radius > right_wall:
-            new_bx = right_wall - radius
-            new_vx = -abs(new_vx) * RESTITUTION
-        if new_by - radius < top_wall:
-            new_by = top_wall + radius
-            new_vy = abs(new_vy) * RESTITUTION
-        if new_by + radius > bot_wall:
-            new_by = bot_wall - radius
-            new_vy = -abs(new_vy) * RESTITUTION
-        return new_bx, new_by, new_vx, new_vy
-    corner_r = CORNER_RADIUS_MM
-    inner_half_len = half_len - corner_r
-    inner_half_wid = half_wid - corner_r
-    if new_by - radius < -half_wid:
-        new_by = -half_wid + radius
-        new_vy = abs(new_vy) * RESTITUTION
-    if new_by + radius > half_wid:
-        new_by = half_wid - radius
-        new_vy = -abs(new_vy) * RESTITUTION
-    entering_left_goal = new_bx - radius < -half_len and abs(new_by) < goal_half
-    entering_right_goal = new_bx + radius > half_len and abs(new_by) < goal_half
-    if not entering_left_goal and new_bx - radius < -half_len:
-        new_bx = -half_len + radius
-        new_vx = abs(new_vx) * RESTITUTION
-    if not entering_right_goal and new_bx + radius > half_len:
-        new_bx = half_len - radius
-        new_vx = -abs(new_vx) * RESTITUTION
-    corner_centers = [
-        (-inner_half_len, -inner_half_wid),
-        (inner_half_len, -inner_half_wid),
-        (inner_half_len, inner_half_wid),
-        (-inner_half_len, inner_half_wid),
-    ]
-    for (ccx, ccy) in corner_centers:
-        in_corner_quadrant = (
-            (new_bx < ccx if ccx < 0 else new_bx > ccx) and
-            (new_by < ccy if ccy < 0 else new_by > ccy)
-        )
-        if not in_corner_quadrant:
-            continue
-        dist = math.sqrt((new_bx - ccx) ** 2 + (new_by - ccy) ** 2)
-        boundary = corner_r - radius
-        if dist > boundary and dist > 0:
-            nx = (ccx - new_bx) / dist
-            ny = (ccy - new_by) / dist
-            new_bx = ccx - nx * boundary
-            new_by = ccy - ny * boundary
-            dot = new_vx * nx + new_vy * ny
-            if dot < 0:
-                new_vx -= (1 + RESTITUTION) * dot * nx
-                new_vy -= (1 + RESTITUTION) * dot * ny
-    return new_bx, new_by, new_vx, new_vy
+    if abs(bx) > half_len and abs(by) < goal_half:
+        sign = 1 if bx > 0 else -1
+        back = sign * (half_len + GOAL_DEPTH_MM)
+        if sign * bx + radius > sign * back:
+            bx = back - sign * radius
+            vx = -sign * abs(vx) * RESTITUTION
+        for ws in (-1, 1):
+            if ws * by + radius > goal_half:
+                by = ws * (goal_half - radius)
+                vy = -ws * abs(vy) * RESTITUTION
+        return bx, by, vx, vy
+    for ws in (-1, 1):
+        if ws * by + radius > half_wid:
+            by = ws * (half_wid - radius)
+            vy = -ws * abs(vy) * RESTITUTION
+    if abs(by) >= goal_half:
+        for ws in (-1, 1):
+            if ws * bx + radius > half_len:
+                bx = ws * (half_len - radius)
+                vx = -ws * abs(vx) * RESTITUTION
+    inner_x = half_len - CORNER_RADIUS_MM
+    inner_y = half_wid - CORNER_RADIUS_MM
+    boundary = CORNER_RADIUS_MM - radius
+    for ccx in (-inner_x, inner_x):
+        for ccy in (-inner_y, inner_y):
+            if (bx - ccx) * ccx <= 0 or (by - ccy) * ccy <= 0:
+                continue
+            dx, dy = bx - ccx, by - ccy
+            dist = math.sqrt(dx * dx + dy * dy)
+            if dist > boundary and dist > 0:
+                nx, ny = -dx / dist, -dy / dist
+                bx = ccx - nx * boundary
+                by = ccy - ny * boundary
+                dot = vx * nx + vy * ny
+                if dot < 0:
+                    vx -= (1 + RESTITUTION) * dot * nx
+                    vy -= (1 + RESTITUTION) * dot * ny
+    return bx, by, vx, vy
 
 
 def collide_ball_with_robot(bx, by, vx, vy, robot):
@@ -255,60 +191,42 @@ def collide_ball_with_robot(bx, by, vx, vy, robot):
     if rx is None or ry is None:
         return bx, by, vx, vy
     heading_rad = math.radians(robot.get('world_heading_deg', 0))
-    half_len = ROBOT_LENGTH_MM / 2
-    half_wid = ROBOT_WIDTH_MM / 2
-    corner_r = ROBOT_CORNER_RADIUS_MM
     cpx, cpy, inside = closest_point_on_rounded_rect(
-        bx, by, rx, ry, half_len, half_wid, corner_r, heading_rad)
-    dx = bx - cpx
-    dy = by - cpy
+        bx, by, rx, ry, ROBOT_LENGTH_MM / 2, ROBOT_WIDTH_MM / 2,
+        ROBOT_CORNER_RADIUS_MM, heading_rad)
+    dx, dy = bx - cpx, by - cpy
     dist = math.sqrt(dx * dx + dy * dy)
-    if inside:
-        penetration = BALL_RADIUS_MM + dist
-        if dist > 0:
-            nx = -dx / dist
-            ny = -dy / dist
-        else:
-            nx, ny = 1.0, 0.0
+    if not inside and dist >= BALL_RADIUS_MM:
+        return bx, by, vx, vy
+    if dist > 0:
+        sign = -1.0 if inside else 1.0
+        nx, ny = sign * dx / dist, sign * dy / dist
     else:
-        if dist >= BALL_RADIUS_MM:
-            return bx, by, vx, vy
-        if dist > 0:
-            nx = dx / dist
-            ny = dy / dist
-        else:
-            nx, ny = 1.0, 0.0
-        penetration = BALL_RADIUS_MM - dist
-    new_bx = bx + nx * penetration
-    new_by = by + ny * penetration
+        nx, ny = 1.0, 0.0
+    penetration = BALL_RADIUS_MM + dist if inside else BALL_RADIUS_MM - dist
+    bx += nx * penetration
+    by += ny * penetration
     vl = robot.get('cmd_vel_left', 0.0)
     vr = robot.get('cmd_vel_right', 0.0)
     forward_speed = (vl + vr) / 2.0
     angular_speed = (vr - vl) / WHEEL_BASE_MM
-    fwd_x = math.cos(heading_rad)
-    fwd_y = math.sin(heading_rad)
-    contact_rx = cpx - rx
-    contact_ry = cpy - ry
+    fwd_x, fwd_y = math.cos(heading_rad), math.sin(heading_rad)
+    contact_rx, contact_ry = cpx - rx, cpy - ry
     robot_vx = forward_speed * fwd_x - angular_speed * contact_ry
     robot_vy = forward_speed * fwd_y + angular_speed * contact_rx
-    rel_vx = vx - robot_vx
-    rel_vy = vy - robot_vy
-    rel_dot = rel_vx * nx + rel_vy * ny
+    rel_dot = (vx - robot_vx) * nx + (vy - robot_vy) * ny
     if rel_dot < 0:
         impulse = -(1 + RESTITUTION) * rel_dot
-        new_vx = vx + impulse * nx
-        new_vy = vy + impulse * ny
-    else:
-        new_vx, new_vy = vx, vy
-    return new_bx, new_by, new_vx, new_vy
+        vx += impulse * nx
+        vy += impulse * ny
+    return bx, by, vx, vy
 
 
 def apply_friction(vx, vy, dt):
     speed = math.sqrt(vx * vx + vy * vy)
     if speed == 0:
         return 0.0, 0.0
-    reduction = FRICTION_PER_SEC * dt
-    new_speed = max(0.0, speed - reduction)
+    new_speed = max(0.0, speed - FRICTION_PER_SEC * dt)
     factor = new_speed / speed
     return vx * factor, vy * factor
 
@@ -327,6 +245,10 @@ def step_virtual_robot(robot: dict, dt: float):
     robot['world_heading_deg'] = math.degrees(heading_rad + d_heading) % 360
     robot['left_encoder'] = robot.get('left_encoder', 0.0) + vl * dt / MM_PER_TICK
     robot['right_encoder'] = robot.get('right_encoder', 0.0) + vr * dt / MM_PER_TICK
+
+
+def clamp_speed(v: float) -> float:
+    return max(-MAX_WHEEL_SPEED_MMPS, min(MAX_WHEEL_SPEED_MMPS, v))
 
 
 ball_state: dict = {
@@ -365,9 +287,7 @@ async def simulation_loop():
             ball_state['vel_x_mmps'] = vx
             ball_state['vel_y_mmps'] = vy
         virtual_updates = {
-            rid: {k: v for k, v in rob.items()}
-            for rid, rob in robots.items()
-            if rob.get('virtual')
+            rid: dict(rob) for rid, rob in robots.items() if rob.get('virtual')
         }
         if virtual_updates:
             await broadcast({'type': 'virtual_robots', 'data': virtual_updates})
@@ -466,10 +386,8 @@ async def override_pose(override: PoseOverride):
 async def command_velocity(cmd: RobotCommand):
     robot_id = cmd.robot_id
     if robot_id in robots and robots[robot_id].get('virtual'):
-        robots[robot_id]['cmd_vel_left'] = max(-MAX_WHEEL_SPEED_MMPS,
-                                               min(MAX_WHEEL_SPEED_MMPS, cmd.cmd_vel_left))
-        robots[robot_id]['cmd_vel_right'] = max(-MAX_WHEEL_SPEED_MMPS,
-                                                min(MAX_WHEEL_SPEED_MMPS, cmd.cmd_vel_right))
+        robots[robot_id]['cmd_vel_left'] = clamp_speed(cmd.cmd_vel_left)
+        robots[robot_id]['cmd_vel_right'] = clamp_speed(cmd.cmd_vel_right)
     return {'status': 'ok'}
 
 
@@ -485,17 +403,14 @@ async def websocket_endpoint(ws: WebSocket):
     try:
         await ws.send_json({'type': 'init', 'robots': robots, 'ball': ball_state})
         while True:
-            raw = await ws.receive_text()
-            msg = json.loads(raw)
+            msg = json.loads(await ws.receive_text())
             if msg.get('type') == 'cmd_vel':
                 robot_id = msg.get('robot_id')
                 if robot_id in robots and robots[robot_id].get('virtual'):
-                    vl = max(-MAX_WHEEL_SPEED_MMPS, min(MAX_WHEEL_SPEED_MMPS,
-                             float(msg.get('cmd_vel_left', 0))))
-                    vr = max(-MAX_WHEEL_SPEED_MMPS, min(MAX_WHEEL_SPEED_MMPS,
-                             float(msg.get('cmd_vel_right', 0))))
-                    robots[robot_id]['cmd_vel_left'] = vl
-                    robots[robot_id]['cmd_vel_right'] = vr
+                    robots[robot_id]['cmd_vel_left'] = clamp_speed(
+                        float(msg.get('cmd_vel_left', 0)))
+                    robots[robot_id]['cmd_vel_right'] = clamp_speed(
+                        float(msg.get('cmd_vel_right', 0)))
     except WebSocketDisconnect:
         websocket_clients.remove(ws)
 
