@@ -170,7 +170,7 @@ def point_in_field(px, py):
     return True
 
 
-def robot_corners(rx, ry, heading_rad, half_len, half_wid):
+def robot_corners_a(rx, ry, heading_rad, half_len, half_wid):
     cos_h = math.cos(heading_rad)
     sin_h = math.sin(heading_rad)
     corners = []
@@ -180,6 +180,42 @@ def robot_corners(rx, ry, heading_rad, half_len, half_wid):
             wy = ry + lx * sin_h + ly * cos_h
             corners.append((wx, wy))
     return corners
+
+
+def robot_corners(rx, ry, heading_rad, half_len, half_wid, corner_r=ROBOT_CORNER_RADIUS_MM):
+    cos_h = math.cos(heading_rad)
+    sin_h = math.sin(heading_rad)
+    inner_half_len = half_len - corner_r
+    inner_half_wid = half_wid - corner_r
+    points = []
+    straight_segments = [
+        (-inner_half_len, -half_wid, inner_half_len, -half_wid),
+        (half_len, -inner_half_wid, half_len, inner_half_wid),
+        (inner_half_len, half_wid, -inner_half_len, half_wid),
+        (-half_len, inner_half_wid, -half_len, -inner_half_wid),
+    ]
+    for x1, y1, x2, y2 in straight_segments:
+        for t in (0.0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0):
+            lx = x1 + t * (x2 - x1)
+            ly = y1 + t * (y2 - y1)
+            wx = rx + lx * cos_h - ly * sin_h
+            wy = ry + lx * sin_h + ly * cos_h
+            points.append((wx, wy))
+    corners = [
+        (inner_half_len, inner_half_wid, 0, math.pi / 2),
+        (inner_half_len, -inner_half_wid, -math.pi / 2, 0),
+        (-inner_half_len, -inner_half_wid, math.pi, 3 * math.pi / 2),
+        (-inner_half_len, inner_half_wid, math.pi / 2, math.pi),
+    ]
+    for cx, cy, start_ang, end_ang in corners:
+        for t in (0.5,):
+            ang = start_ang + t * (end_ang - start_ang)
+            lx = cx + corner_r * math.cos(ang)
+            ly = cy + corner_r * math.sin(ang)
+            wx = rx + lx * cos_h - ly * sin_h
+            wy = ry + lx * sin_h + ly * cos_h
+            points.append((wx, wy))
+    return points
 
 
 def robots_overlap(r1, r2):
