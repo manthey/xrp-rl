@@ -28,6 +28,7 @@ CORNER_RADIUS_MM = 250
 ROBOT_LENGTH_MM = 160
 ROBOT_WIDTH_MM = 180
 ROBOT_CORNER_RADIUS_MM = 20
+ROBOT_DISTANCE_SENSOR_OFFSET = 70
 BALL_DIAMETER_MM = 60
 BALL_RADIUS_MM = BALL_DIAMETER_MM / 2
 TAPE_WIDTH_MM = 25
@@ -247,6 +248,8 @@ def generate_distance_reading(robot, robots_dict, ball):
     heading_rad = math.radians(robot.get('world_heading_deg', 0.0))
     dx = math.cos(heading_rad)
     dy = math.sin(heading_rad)
+    rx += dx * ROBOT_DISTANCE_SENSOR_OFFSET
+    ry += dy * ROBOT_DISTANCE_SENSOR_OFFSET
     min_distance = None
     t = ray_to_field_boundary(rx, ry, dx, dy)
     if t is not None and t > 0:
@@ -265,8 +268,6 @@ def generate_distance_reading(robot, robots_dict, ball):
         return 65535
     distance_mm = min_distance
     if distance_mm < 20:
-        if random.random() < 0.5:
-            return 65535
         distance_mm = 20
     noise_std = 0.5 + distance_mm * 0.01
     distance_mm += random.gauss(0, noise_std)
