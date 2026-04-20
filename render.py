@@ -67,6 +67,8 @@ class Telemetry(BaseModel):
 class BallState(BaseModel):
     world_x_mm: float
     world_y_mm: float
+    vel_x_mmps: float = 0.0
+    vel_y_mmps: float = 0.0
 
 
 class PoseOverride(BaseModel):
@@ -76,7 +78,7 @@ class PoseOverride(BaseModel):
     world_heading_deg: float
 
 
-ball_state: dict = {"world_x_mm": 0.0, "world_y_mm": 0.0}
+ball_state: dict = {"world_x_mm": 0.0, "world_y_mm": 0.0, "vel_x_mmps": 0.0, "vel_y_mmps": 0.0}
 
 
 @app.post("/telemetry")
@@ -198,6 +200,14 @@ def build_html(config: dict) -> str:
     Hdg: <input id="ov-hdg" type="number" value="0">
     <button onclick="sendOverride()">Set</button>
   </div>
+  <div class="section-title">Ball Control</div>
+  <div>
+    X mm: <input id="ball-x" type="number" value="0">
+    Y mm: <input id="ball-y" type="number" value="0">
+    Vel X mm/s: <input id="ball-vx" type="number" value="0">
+    Vel Y mm/s: <input id="ball-vy" type="number" value="0">
+    <button onclick="sendBallState()">Set</button>
+  </div>
 </div>
 <script>
 const C = """ + config_json + r""";
@@ -227,7 +237,7 @@ function fieldToCanvas(x, y) {
 }
 
 let robots = {};
-let ball = {world_x_mm: 0, world_y_mm: 0};
+let ball = {world_x_mm: 0, world_y_mm: 0, vel_x_mmps: 0, vel_y_mmps: 0};
 
 function drawField() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -378,6 +388,26 @@ function sendOverride() {
   });
 }
 
+function sendBallState() {
+  fetch('/ball', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      world_x_mm: parseFloat(document.getElementById('ball-x').value),
+      world_y_mm: parseFloat(document.getElementById('ball-y').value),
+      vel_x_mmps: parseFloat(document.getElementById('ball-vx').value),
+      vel_y_mmps: parseFloat(document.getElementById('ball-vy').value),
+    }),
+  });
+}
+
+function updateBallControls() {
+    document.getElementById('ball-x').value = ball.world_x_mm.toFixed(0);
+    document.getElementById('ball-y').value = ball.world_y_mm.toFixed(0);
+    document.getElementById('ball-vx').value = (ball.vel_x_mmps ?? 0).toFixed(0);
+    document.getElementById('ball-vy').value = (ball.vel_y_mmps ?? 0).toFixed(0);
+}
+
 window.addEventListener('resize', render);
 
 const ws = new WebSocket(`ws://${location.host}/ws`);
@@ -386,11 +416,13 @@ ws.onmessage = (event) => {
   if (msg.type === 'init') {
     robots = msg.robots;
     ball   = msg.ball ?? ball;
+    updateBallControls();
   } else if (msg.type === 'telemetry') {
     const d = msg.data;
     robots[d.robot_id] = {...(robots[d.robot_id] ?? {}), ...d};
   } else if (msg.type === 'ball') {
     ball = msg.data;
+    updateBallControls();
   } else if (msg.type === 'pose_override') {
     const d = msg.data;
     if (robots[d.robot_id]) {
