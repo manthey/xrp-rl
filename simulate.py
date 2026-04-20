@@ -734,6 +734,11 @@ async def get_robots():
     return robots
 
 
+@app.get('/robot')
+async def get_robot(robot_id: str):
+    return robots[robot_id]
+
+
 @app.websocket('/ws')
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
