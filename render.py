@@ -25,7 +25,7 @@ GOAL_WIDTH_MM = 500
 GOAL_DEPTH_MM = 120
 CORNER_RADIUS_MM = 250
 ROBOT_SIZE_MM = 200
-BALL_DIAMETER_MM = 40
+BALL_DIAMETER_MM = 100
 TAPE_WIDTH_MM = 25
 SCALE = 0.32
 
@@ -193,7 +193,8 @@ const s = mm => mm * C.scale;
 
 const canvas = document.getElementById('field');
 const ctx = canvas.getContext('2d');
-canvas.width  = Math.round(s(C.field_length_mm)) + 2;
+const gd = Math.round(s(C.goal_depth_mm));
+canvas.width  = Math.round(s(C.field_length_mm)) + 2 + gd * 2;
 canvas.height = Math.round(s(C.field_width_mm))  + 2;
 
 let robots = {};
@@ -201,8 +202,8 @@ let ball = {world_x_mm: 0, world_y_mm: 0};
 
 function fieldToCanvas(x, y) {
   return [
-    (x + C.field_length_mm / 2) * C.scale + 1,
-    (C.field_width_mm  / 2 - y) * C.scale + 1,
+    (x + C.field_length_mm / 2) * C.scale + 1 + gd,
+    (C.field_width_mm / 2 - y) * C.scale + 1,
   ];
 }
 
@@ -214,9 +215,18 @@ function drawField() {
   const fh = s(C.field_width_mm);
   const r  = s(C.corner_radius_mm);
   const gw = s(C.goal_width_mm);
-  const gd = s(C.goal_depth_mm);
-  const ox = 1, oy = 1;
+  const ox = 1 + gd, oy = 1;
   const gTop = oy + (fh - gw) / 2;
+
+  for (const line of C.tape_lines) {
+    const [lx] = fieldToCanvas(line.x_mm, 0);
+    ctx.strokeStyle = line.color;
+    ctx.lineWidth = Math.round(s(C.tape_width_mm));
+    ctx.beginPath();
+    ctx.moveTo(lx, oy);
+    ctx.lineTo(lx, oy + fh);
+    ctx.stroke();
+  }
 
   ctx.strokeStyle = '#ffffff';
   ctx.lineWidth = 2;
@@ -236,19 +246,18 @@ function drawField() {
   ctx.arcTo(ox, oy, ox + r, oy, r);
   ctx.stroke();
 
-  for (const line of C.tape_lines) {
-    const [lx] = fieldToCanvas(line.x_mm, 0);
-    ctx.strokeStyle = line.color;
-    ctx.lineWidth = Math.round(s(C.tape_width_mm));
-    ctx.beginPath();
-    ctx.moveTo(lx, oy);
-    ctx.lineTo(lx, oy + fh);
-    ctx.stroke();
-  }
-
   for (const side of [-1, 1]) {
     const wallX   = side === 1 ? ox + fw : ox;
     const wallDir = side === 1 ? 1 : -1;
+
+    ctx.fillStyle = '#2d6a2d';
+    ctx.fillRect(
+      wallDir === 1 ? wallX : wallX - gd,
+      gTop,
+      gd,
+      gw
+    );
+
     ctx.strokeStyle = '#aaaaaa';
     ctx.lineWidth = 2;
     ctx.beginPath();
