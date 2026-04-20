@@ -247,30 +247,33 @@ def constrain_robot_to_field(robot):
 
 def resolve_robot_overlaps():
     robot_list = list(robots.values())
-    for i in range(len(robot_list)):
-        for j in range(i + 1, len(robot_list)):
-            r1 = robot_list[i]
-            r2 = robot_list[j]
-            if robots_overlap(r1, r2):
-                rx1 = r1.get('world_x_mm', 0.0)
-                ry1 = r1.get('world_y_mm', 0.0)
-                rx2 = r2.get('world_x_mm', 0.0)
-                ry2 = r2.get('world_y_mm', 0.0)
-                dx = rx2 - rx1
-                dy = ry2 - ry1
-                dist = math.sqrt(dx * dx + dy * dy)
-                if dist > 0:
-                    nx, ny = dx / dist, dy / dist
-                else:
-                    nx, ny = 1.0, 0.0
-                separation = (ROBOT_LENGTH_MM + ROBOT_WIDTH_MM) / 2
-                push = separation / 2
-                r1['world_x_mm'] = rx1 - nx * push
-                r1['world_y_mm'] = ry1 - ny * push
-                r2['world_x_mm'] = rx2 + nx * push
-                r2['world_y_mm'] = ry2 + ny * push
-                constrain_robot_to_field(r1)
-                constrain_robot_to_field(r2)
+    check = True
+    while check:
+        check = False
+        for i in range(len(robot_list)):
+            for j in range(i + 1, len(robot_list)):
+                r1 = robot_list[i]
+                r2 = robot_list[j]
+                if robots_overlap(r1, r2):
+                    check = True
+                    rx1 = r1.get('world_x_mm', 0.0)
+                    ry1 = r1.get('world_y_mm', 0.0)
+                    rx2 = r2.get('world_x_mm', 0.0)
+                    ry2 = r2.get('world_y_mm', 0.0)
+                    dx = rx2 - rx1
+                    dy = ry2 - ry1
+                    dist = math.sqrt(dx * dx + dy * dy)
+                    if dist > 0:
+                        nx, ny = dx / dist, dy / dist
+                    else:
+                        nx, ny = 1.0, 0.0
+                    push = 0.5
+                    r1['world_x_mm'] = rx1 - nx * push
+                    r1['world_y_mm'] = ry1 - ny * push
+                    r2['world_x_mm'] = rx2 + nx * push
+                    r2['world_y_mm'] = ry2 + ny * push
+                    constrain_robot_to_field(r1)
+                    constrain_robot_to_field(r2)
 
 
 def field_boundary_response(bx, by, vx, vy, radius):  # noqa
