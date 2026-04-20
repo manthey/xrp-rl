@@ -29,6 +29,8 @@ ROBOT_LENGTH_MM = 160
 ROBOT_WIDTH_MM = 180
 ROBOT_CORNER_RADIUS_MM = 20
 ROBOT_DISTANCE_SENSOR_OFFSET = 70
+ROBOT_REFLECTANCE_SENSOR_OFFSET = 60
+ROBOT_REFLECTANCE_SENSOR_SIDE = 20
 BALL_DIAMETER_MM = 60
 BALL_RADIUS_MM = BALL_DIAMETER_MM / 2
 TAPE_WIDTH_MM = 25
@@ -44,11 +46,11 @@ RESTITUTION = 0.9
 SIM_HZ = 60
 
 TAPE_LINES = [
-    {'x_mm': -FIELD_LENGTH_MM / 4, 'color': 'blue'},
-    {'x_mm': FIELD_LENGTH_MM / 4, 'color': 'red'},
-    {'x_mm': 0, 'color': 'white'},
-    {'x_mm': -FIELD_LENGTH_MM / 2 + 1, 'color': 'blue'},
-    {'x_mm': FIELD_LENGTH_MM / 2 - 1, 'color': 'red'},
+    {'x_mm': -FIELD_LENGTH_MM / 4, 'color': 'blue', 'rel': 0.23},
+    {'x_mm': FIELD_LENGTH_MM / 4, 'color': 'red', 'rel': 0.24},
+    {'x_mm': 0, 'color': 'white', 'rel': 0.20},
+    {'x_mm': -FIELD_LENGTH_MM / 2 + 1, 'color': 'blue', 'rel': 0.23},
+    {'x_mm': FIELD_LENGTH_MM / 2 - 1, 'color': 'red', 'rel': 0.24},
 ]
 FIELD_CONFIG = {
     'field_length_mm': FIELD_LENGTH_MM,
@@ -80,7 +82,6 @@ websocket_clients: list[WebSocket] = []
 class RobotPose:
     """
     Dead-reckoning pose tracker using differential drive kinematics.
-    Suitable for use on the XRP (MicroPython) or in simulation.
     Call update_from_encoders each control cycle with current raw tick counts.
     Call correct_pose when a ground-truth position is known (tape line, wall).
     """
@@ -280,6 +281,26 @@ def generate_distance_reading(robot, robots_dict, ball):
     return max(0, min(65535, distance_cm))
 
 
+def generate_reflectance_readings(robot):
+    rx = robot.get('world_x_mm')
+    ry = robot.get('world_y_mm')
+    if rx is None or ry is None:
+        return 65535
+    heading_rad = math.radians(robot.get('world_heading_deg', 0.0))
+    dx = math.cos(heading_rad)
+    dy = math.sin(heading_rad)
+    rx += dx * ROBOT_REFLECTANCE_SENSOR_OFFSET
+    ry += dy * ROBOT_REFLECTANCE_SENSOR_OFFSET
+    for side, mul in [('left', -1), ('right', 1)]:
+        sx = rx + dy * ROBOT_REFLECTANCE_SENSOR_SIDE * mul
+        # sy = ry + dx * ROBOT_REFLECTANCE_SENSOR_SIDE
+        rel = 0.9
+        for t in TAPE_LINES:
+            if abs(sx - t['x_mm']) < TAPE_WIDTH_MM / 2:
+                rel = t['rel']
+        robot[f'reflectance_{side}'] = min(1, random.gauss(rel, 0.03))
+
+
 def closest_point_on_rounded_rect(px, py, cx, cy, half_len, half_wid, corner_r, heading_rad):
     cos_h = math.cos(-heading_rad)
     sin_h = math.sin(-heading_rad)
@@ -328,18 +349,6 @@ def point_in_field(px, py):
                 if dx * dx + dy * dy > CORNER_RADIUS_MM * CORNER_RADIUS_MM:
                     return False
     return True
-
-
-def robot_corners_a(rx, ry, heading_rad, half_len, half_wid):
-    cos_h = math.cos(heading_rad)
-    sin_h = math.sin(heading_rad)
-    corners = []
-    for lx in (-half_len, half_len):
-        for ly in (-half_wid, half_wid):
-            wx = rx + lx * cos_h - ly * sin_h
-            wy = ry + lx * sin_h + ly * cos_h
-            corners.append((wx, wy))
-    return corners
 
 
 def robot_corners(rx, ry, heading_rad, half_len, half_wid, corner_r=ROBOT_CORNER_RADIUS_MM):
@@ -612,6 +621,7 @@ async def simulation_loop():
         for robot in robots.values():
             if robot.get('virtual'):
                 robot['distance_cm'] = generate_distance_reading(robot, robots, ball_state)
+                generate_reflectance_readings(robot)
         virtual_updates = {
             rid: dict(rob) for rid, rob in robots.items() if rob.get('virtual')
         }
