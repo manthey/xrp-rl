@@ -1,465 +1,150 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>XRP Soccer Field</title>
-<style>
-  * { box-sizing: border-box; }
-  body {
-    background: #1a1a1a;
-    color: #e0e0e0;
-    font-family: monospace;
-    margin: 0;
-    padding: 0;
-  }
-  #canvas-container { width: 100vw; overflow: hidden; }
-  #field { display: block; background: #2d6a2d; width: 100%; height: auto; }
-  #panel { padding: 10px; }
-  table { border-collapse: collapse; width: 100%; font-size: 11px; }
-  td, th { border: 1px solid #444; padding: 3px 6px; }
-  th { background: #333; }
-  .section-title { margin: 10px 0 4px; font-weight: bold; font-size: 13px; }
-  input[inputmode=numeric] { width: 70px; background: #333; color: #e0e0e0; border: 1px solid #666; }
-  input[type=text]   { background: #333; color: #e0e0e0; border: 1px solid #666; }
-  button { background: #555; color: #e0e0e0; border: 1px solid #888; cursor: pointer; padding: 2px 8px; }
-  button:hover { background: #777; }
-  #ball-info { font-size: 12px; margin: 4px 0; }
-  #joysticks { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 8px; }
-  .joystick-wrap { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-  .joystick-label { font-size: 11px; }
-  .joystick-canvas { touch-action: none; cursor: grab; border: 1px solid #555; border-radius: 4px; background: #222; display: block; width: 160px; height: 160px; flex: none; }
-</style>
-</head>
-<body>
-<div id="canvas-container">
-  <canvas id="field"></canvas>
-</div>
-<div id="panel">
-  <div class="section-title">Ball State</div>
-  <div id="ball-info">x: - &nbsp; y: - &nbsp; vx: - &nbsp; vy: -</div>
-  <div class="section-title">Robots</div>
-  <table id="robot-table">
-    <thead><tr>
-      <th>ID</th><th>X mm</th><th>Y mm</th><th>Hdg</th>
-      <th>Dist cm</th><th>Refl L</th><th>Refl R</th>
-      <th>Enc L</th><th>Enc R</th><th>Virt</th>
-    </tr></thead>
-    <tbody id="robot-tbody"></tbody>
-  </table>
-  <div class="section-title">Pose Override / Create Virtual Robot</div>
-  <div>
-    Robot ID: <input id="ov-id" type="text" style="width:80px">
-    X mm: <input id="ov-x" type="text" inputmode="numeric" value="0">
-    Y mm: <input id="ov-y" type="text" inputmode="numeric" value="0">
-    Hdg: <input id="ov-hdg" type="text" inputmode="numeric" value="0">
-    <button onclick="sendOverride()">Set</button>
-  </div>
-  <div class="section-title">Ball Control</div>
-  <div>
-    X mm: <input id="ball-x" type="text" inputmode="numeric" value="0">
-    Y mm: <input id="ball-y" type="text" inputmode="numeric" value="0">
-    Vel X mm/s: <input id="ball-vx" type="text" inputmode="numeric" value="0">
-    Vel Y mm/s: <input id="ball-vy" type="text" inputmode="numeric" value="0">
-    <button onclick="sendBallState()">Set</button>
-  </div>
-  <div class="section-title">Virtual Robot Controls</div>
-  <div id="joysticks"></div>
-</div>
-<script>
-const C = CONFIG_JSON;
-
-const canvas = document.getElementById('field');
-const ctx = canvas.getContext('2d');
-
-let scale = 1;
-let gd = 0;
-
-function computeLayout() {
-  scale = window.innerWidth / (C.field_length_mm + 2 * C.goal_depth_mm + 2);
-  gd = Math.round(scale * C.goal_depth_mm);
-  canvas.width  = window.innerWidth;
-  canvas.height = Math.round(scale * C.field_width_mm) + 2;
-}
-
-const s = mm => mm * scale;
-
-function fieldToCanvas(x, y) {
-  return [
-    (x + C.field_length_mm / 2) * scale + 1 + gd,
-    (C.field_width_mm / 2 - y) * scale + 1,
-  ];
-}
-
-let robots = {};
-let ball = {world_x_mm: 0, world_y_mm: 0, vel_x_mmps: 0, vel_y_mmps: 0};
-
-const ws = new WebSocket(`ws://${location.host}/ws`);
-
-const joystickState = {};
-
-function makeJoystick(robotId) {
-  const size = 160;
-  const knobR = 15;
-  const wrap = document.createElement('div');
-  wrap.className = 'joystick-wrap';
-  wrap.dataset.robotId = robotId;
-
-  const label = document.createElement('div');
-  label.className = 'joystick-label';
-  label.textContent = robotId;
-  wrap.appendChild(label);
-
-  const jc = document.createElement('canvas');
-  jc.className = 'joystick-canvas';
-  jc.width = size;
-  jc.height = size;
-  wrap.appendChild(jc);
-
-  const velLabel = document.createElement('div');
-  velLabel.className = 'joystick-label';
-  velLabel.textContent = 'L: 0  R: 0';
-  wrap.appendChild(velLabel);
-
-  const state = { dx: 0, dy: 0, active: false };
-  joystickState[robotId] = { state, velLabel, jc, size, knobR };
-
-  function drawJoystick() {
-    const jctx = jc.getContext('2d');
-    const cx = size / 2, cy = size / 2;
-    const maxR = size / 2 - knobR - 4;
-    jctx.clearRect(0, 0, size, size);
-    jctx.beginPath();
-    jctx.arc(cx, cy, size / 2 - 2, 0, 2 * Math.PI);
-    jctx.fillStyle = '#2a2a2a';
-    jctx.fill();
-    jctx.strokeStyle = '#555';
-    jctx.lineWidth = 1;
-    jctx.stroke();
-    jctx.beginPath();
-    jctx.moveTo(cx, cy - maxR);
-    jctx.lineTo(cx, cy + maxR);
-    jctx.moveTo(cx - maxR, cy);
-    jctx.lineTo(cx + maxR, cy);
-    jctx.strokeStyle = '#444';
-    jctx.lineWidth = 1;
-    jctx.stroke();
-    const kx = cx - state.dx * maxR;
-    const ky = cy - state.dy * maxR;
-    jctx.beginPath();
-    jctx.arc(kx, ky, knobR, 0, 2 * Math.PI);
-    jctx.fillStyle = '#888';
-    jctx.fill();
-    jctx.strokeStyle = '#bbb';
-    jctx.lineWidth = 1.5;
-    jctx.stroke();
-  }
-
-  function getOffsetInCanvas(e) {
-    const rect = jc.getBoundingClientRect();
-    const cx = e.clientX ?? e.touches[0].clientX;
-    const cy = e.clientY ?? e.touches[0].clientY;
-    return [cx - rect.left, cy - rect.top];
-  }
-
-  function updateFromOffset(ox, oy) {
-    const cx = size / 2, cy = size / 2;
-    let dx = -(ox - cx) / (size / 2 - knobR - 4);
-    if (Math.abs(dx) < 0.2) { dx = 0; }
-    if (Math.abs(dx) > 1.0) { dx = Math.sign(dx); }
-    let dy = -(oy - cy) / (size / 2 - knobR - 4);
-    if (Math.abs(dy) < 0.2) { dy = 0; }
-    if (Math.abs(dy) > 1.0) { dy = Math.sign(dy); }
-    state.dx = dx;
-    state.dy = dy;
-    sendVelocity(robotId, dx, dy, velLabel);
-    drawJoystick();
-  }
-
-  jc.addEventListener('mousedown', e => {
-    state.active = true;
-    const [ox, oy] = getOffsetInCanvas(e);
-    updateFromOffset(ox, oy);
-  });
-  jc.addEventListener('touchstart', e => {
-    e.preventDefault();
-    state.active = true;
-    const [ox, oy] = getOffsetInCanvas(e);
-    updateFromOffset(ox, oy);
-  }, { passive: false });
-  window.addEventListener('mousemove', e => {
-    if (!state.active) return;
-    const [ox, oy] = getOffsetInCanvas(e);
-    updateFromOffset(ox, oy);
-  });
-  window.addEventListener('touchmove', e => {
-    if (!state.active) return;
-    e.preventDefault();
-    const [ox, oy] = getOffsetInCanvas(e);
-    updateFromOffset(ox, oy);
-  }, { passive: false });
-  function release() {
-    if (!state.active) return;
-    state.active = false;
-    state.dx = 0;
-    state.dy = 0;
-    sendVelocity(robotId, 0, 0, velLabel);
-    drawJoystick();
-  }
-  window.addEventListener('mouseup', release);
-  window.addEventListener('touchend', release);
-
-  drawJoystick();
-  return wrap;
-}
-
-function sendVelocity(robotId, dx, dy, velLabel) {
-  const maxV = C.max_wheel_speed_mmps;
-  const wb   = C.wheel_base_mm;
-  const vl = (dy - dx) * maxV;
-  const vr = (dy + dx) * maxV;
-  velLabel.textContent = `L: ${vl.toFixed(1)}  R: ${vr.toFixed(1)}`;
-  if (ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({
-      type: 'cmd_vel',
-      robot_id: robotId,
-      cmd_vel_left:  vl,
-      cmd_vel_right: vr,
-    }));
-  }
-}
-
-function rebuildJoysticks() {
-  const container = document.getElementById('joysticks');
-  const virtualIds = Object.keys(robots).filter(id => robots[id].virtual);
-  const existing = new Set([...container.querySelectorAll('.joystick-wrap')].map(el => el.dataset.robotId));
-  for (const id of virtualIds) {
-    if (!existing.has(id)) {
-      container.appendChild(makeJoystick(id));
-    }
-  }
-  for (const el of container.querySelectorAll('.joystick-wrap')) {
-    if (!virtualIds.includes(el.dataset.robotId)) {
-      el.remove();
-      delete joystickState[el.dataset.robotId];
-    }
-  }
-}
-
-function drawField() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.save();
-
-  const fw   = s(C.field_length_mm);
-  const fh   = s(C.field_width_mm);
-  const r    = s(C.corner_radius_mm);
-  const gw   = s(C.goal_width_mm);
-  const ox   = 1 + gd;
-  const oy   = 1;
-  const gTop = oy + (fh - gw) / 2;
-
-  for (const line of C.tape_lines) {
-    const [lx] = fieldToCanvas(line.x_mm, 0);
-    ctx.strokeStyle = line.color;
-    ctx.lineWidth = Math.max(1, Math.round(s(C.tape_width_mm)));
-    ctx.beginPath();
-    ctx.moveTo(lx, oy);
-    ctx.lineTo(lx, oy + fh);
-    ctx.stroke();
-  }
-
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(ox + r, oy);
-  ctx.lineTo(ox + fw - r, oy);
-  ctx.arcTo(ox + fw, oy, ox + fw, oy + r, r);
-  ctx.lineTo(ox + fw, gTop);
-  ctx.moveTo(ox + fw, gTop + gw);
-  ctx.lineTo(ox + fw, oy + fh - r);
-  ctx.arcTo(ox + fw, oy + fh, ox + fw - r, oy + fh, r);
-  ctx.lineTo(ox + r, oy + fh);
-  ctx.arcTo(ox, oy + fh, ox, oy + fh - r, r);
-  ctx.lineTo(ox, gTop + gw);
-  ctx.moveTo(ox, gTop);
-  ctx.lineTo(ox, oy + r);
-  ctx.arcTo(ox, oy, ox + r, oy, r);
-  ctx.stroke();
-
-  for (const side of [-1, 1]) {
-    const wallX   = side === 1 ? ox + fw : ox;
-    const wallDir = side === 1 ? 1 : -1;
-    ctx.fillStyle = '#2d6a2d';
-    ctx.fillRect(wallDir === 1 ? wallX : wallX - gd, gTop, gd, gw);
-    ctx.strokeStyle = '#aaaaaa';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(wallX, gTop);
-    ctx.lineTo(wallX + wallDir * gd, gTop);
-    ctx.lineTo(wallX + wallDir * gd, gTop + gw);
-    ctx.lineTo(wallX, gTop + gw);
-    ctx.stroke();
-  }
-
-  ctx.restore();
-}
-
-function drawBall() {
-  const [cx, cy] = fieldToCanvas(ball.world_x_mm, ball.world_y_mm);
-  const r = s(C.ball_diameter_mm / 2);
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, 2 * Math.PI);
-  ctx.fillStyle = '#f0f0f0';
-  ctx.fill();
-  ctx.strokeStyle = '#333333';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  ctx.restore();
-}
-
-function drawRobots() {
-  const len2 = s(C.robot_length_mm / 2);
-  const wid2 = s(C.robot_width_mm / 2);
-  const r = s(C.robot_corner_radius_mm);
-  for (const id in robots) {
-    const rob = robots[id];
-    if (rob.world_x_mm == null || rob.world_y_mm == null) continue;
-    const hdg = rob.world_heading_deg ?? 0;
-    const [cx, cy] = fieldToCanvas(rob.world_x_mm, rob.world_y_mm);
-    const rad = hdg * Math.PI / 180;
-
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(-rad);
-    ctx.beginPath();
-    ctx.moveTo(-len2 + r, -wid2);
-    ctx.lineTo(len2 - r, -wid2);
-    ctx.arcTo(len2, -wid2, len2, -wid2 + r, r);
-    ctx.lineTo(len2, wid2 - r);
-    ctx.arcTo(len2, wid2, len2 - r, wid2, r);
-    ctx.lineTo(-len2 + r, wid2);
-    ctx.arcTo(-len2, wid2, -len2, wid2 - r, r);
-    ctx.lineTo(-len2, -wid2 + r);
-    ctx.arcTo(-len2, -wid2, -len2 + r, -wid2, r);
-    ctx.closePath();
-    ctx.fillStyle = id.toLowerCase().includes('red')  ? '#cc3333' :
-                    id.toLowerCase().includes('blue') ? '#3366cc' : '#888888';
-    ctx.fill();
-    ctx.strokeStyle = rob.virtual ? '#ffff00' : '#ffffff';
-    ctx.lineWidth = rob.virtual ? 2 : 1;
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(len2, 0);
-    ctx.lineTo(len2 * 0.6, -wid2 * 0.5);
-    ctx.lineTo(len2 * 0.6,  wid2 * 0.5);
-    ctx.closePath();
-    ctx.fillStyle = '#ffffff';
-    ctx.fill();
-    ctx.restore();
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `${Math.max(9, Math.round(s(40)))}px monospace`;
-    ctx.fillText(id, cx, cy);
-  }
-}
-
-function render() {
-  computeLayout();
-  drawField();
-  drawBall();
-  drawRobots();
-}
-
-function updateBallInfo() {
-  document.getElementById('ball-info').textContent =
-    `x: ${ball.world_x_mm.toFixed(1)} mm   y: ${ball.world_y_mm.toFixed(1)} mm` +
-    `   vx: ${(ball.vel_x_mmps ?? 0).toFixed(1)} mm/s   vy: ${(ball.vel_y_mmps ?? 0).toFixed(1)} mm/s`;
-}
-
-function updateTable() {
-  const tbody = document.getElementById('robot-tbody');
-  tbody.innerHTML = '';
-  for (const id in robots) {
-    const rob = robots[id];
-    const tr = document.createElement('tr');
-    for (const f of [
-      id,
-      rob.world_x_mm?.toFixed(0)        ?? '-',
-      rob.world_y_mm?.toFixed(0)        ?? '-',
-      rob.world_heading_deg?.toFixed(1) ?? '-',
-      rob.distance_cm?.toFixed(1)       ?? '-',
-      rob.reflectance_left?.toFixed(3)  ?? '-',
-      rob.reflectance_right?.toFixed(3) ?? '-',
-      rob.left_encoder?.toFixed(0)      ?? '-',
-      rob.right_encoder?.toFixed(0)     ?? '-',
-      rob.virtual ? 'yes' : 'no',
-    ]) {
-      const td = document.createElement('td');
-      td.textContent = f;
-      tr.appendChild(td);
-    }
-    tbody.appendChild(tr);
-  }
-}
-
-function sendOverride() {
-  fetch('/pose_override', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({
-      robot_id:          document.getElementById('ov-id').value,
-      world_x_mm:        parseFloat(document.getElementById('ov-x').value),
-      world_y_mm:        parseFloat(document.getElementById('ov-y').value),
-      world_heading_deg: parseFloat(document.getElementById('ov-hdg').value),
-    }),
-  });
-}
-
-function sendBallState() {
-  fetch('/ball', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({
-      world_x_mm: parseFloat(document.getElementById('ball-x').value),
-      world_y_mm: parseFloat(document.getElementById('ball-y').value),
-      vel_x_mmps: parseFloat(document.getElementById('ball-vx').value),
-      vel_y_mmps: parseFloat(document.getElementById('ball-vy').value),
-    }),
-  });
-}
-
-window.addEventListener('resize', render);
-
-ws.onmessage = (event) => {
-  const msg = JSON.parse(event.data);
-  if (msg.type === 'init') {
-    robots = msg.robots;
-    ball   = msg.ball ?? ball;
-    rebuildJoysticks();
-  } else if (msg.type === 'telemetry') {
-    const d = msg.data;
-    robots[d.robot_id] = {...(robots[d.robot_id] ?? {}), ...d};
-  } else if (msg.type === 'ball') {
-    ball = msg.data;
-  } else if (msg.type === 'pose_override') {
-    const d = msg.data;
-    if (!robots[d.robot_id]) robots[d.robot_id] = {robot_id: d.robot_id, virtual: true};
-    robots[d.robot_id].world_x_mm        = d.world_x_mm;
-    robots[d.robot_id].world_y_mm        = d.world_y_mm;
-    robots[d.robot_id].world_heading_deg = d.world_heading_deg;
-    rebuildJoysticks();
-  } else if (msg.type === 'virtual_robots') {
-    for (const [id, data] of Object.entries(msg.data)) {
-      robots[id] = {...(robots[id] ?? {}), ...data};
-    }
-  }
-  render();
-  updateBallInfo();
-  updateTable();
-};
-
-render();
-</script>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>XRP Soccer Field</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        background: #1a1a1a;
+        color: #e0e0e0;
+        font-family: monospace;
+        margin: 0;
+        padding: 0;
+      }
+      #canvas-container {
+        width: 100vw;
+        overflow: hidden;
+      }
+      #field {
+        display: block;
+        background: #2d6a2d;
+        width: 100%;
+        height: auto;
+      }
+      #panel {
+        padding: 10px;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 11px;
+      }
+      td,
+      th {
+        border: 1px solid #444;
+        padding: 3px 6px;
+      }
+      th {
+        background: #333;
+      }
+      .section-title {
+        margin: 10px 0 4px;
+        font-weight: bold;
+        font-size: 13px;
+      }
+      input[inputmode='numeric'] {
+        width: 70px;
+        background: #333;
+        color: #e0e0e0;
+        border: 1px solid #666;
+      }
+      input[type='text'] {
+        background: #333;
+        color: #e0e0e0;
+        border: 1px solid #666;
+      }
+      button {
+        background: #555;
+        color: #e0e0e0;
+        border: 1px solid #888;
+        cursor: pointer;
+        padding: 2px 8px;
+      }
+      button:hover {
+        background: #777;
+      }
+      #ball-info {
+        font-size: 12px;
+        margin: 4px 0;
+      }
+      #joysticks {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        margin-top: 8px;
+      }
+      .joystick-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+      }
+      .joystick-label {
+        font-size: 11px;
+      }
+      .joystick-canvas {
+        touch-action: none;
+        cursor: grab;
+        border: 1px solid #555;
+        border-radius: 4px;
+        background: #222;
+        display: block;
+        width: 160px;
+        height: 160px;
+        flex: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="canvas-container">
+      <canvas id="field"></canvas>
+    </div>
+    <div id="panel">
+      <div class="section-title">Ball State</div>
+      <div id="ball-info">x: - &nbsp; y: - &nbsp; vx: - &nbsp; vy: -</div>
+      <div class="section-title">Robots</div>
+      <table id="robot-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>X mm</th>
+            <th>Y mm</th>
+            <th>Hdg</th>
+            <th>Dist cm</th>
+            <th>Refl L</th>
+            <th>Refl R</th>
+            <th>Enc L</th>
+            <th>Enc R</th>
+            <th>Virt</th>
+          </tr>
+        </thead>
+        <tbody id="robot-tbody"></tbody>
+      </table>
+      <div class="section-title">Pose Override / Create Virtual Robot</div>
+      <div>
+        Robot ID: <input id="ov-id" type="text" style="width: 80px" /> X mm:
+        <input id="ov-x" type="text" inputmode="numeric" value="0" /> Y mm:
+        <input id="ov-y" type="text" inputmode="numeric" value="0" /> Hdg:
+        <input id="ov-hdg" type="text" inputmode="numeric" value="0" />
+        <button onclick="sendOverride()">Set</button>
+      </div>
+      <div class="section-title">Ball Control</div>
+      <div>
+        X mm: <input id="ball-x" type="text" inputmode="numeric" value="0" /> Y mm:
+        <input id="ball-y" type="text" inputmode="numeric" value="0" /> Vel X mm/s:
+        <input id="ball-vx" type="text" inputmode="numeric" value="0" /> Vel Y mm/s:
+        <input id="ball-vy" type="text" inputmode="numeric" value="0" />
+        <button onclick="sendBallState()">Set</button>
+      </div>
+      <div class="section-title">Virtual Robot Controls</div>
+      <div id="joysticks"></div>
+    </div>
+    <script>
+      MAINSCRIPT;
+    </script>
+  </body>
 </html>

@@ -97,3 +97,15 @@ repos:
 #    hooks:
 #      - id: yamlfix
 #        args: [-c, pyproject.toml]
+  - repo: local
+    hooks:
+      - id: prettier
+        name: prettier
+        entry: prettier
+        language: node
+        args: [--write]
+        additional_dependencies:
+          - prettier@^3.8
+        types_or:
+          - html
+          - javascript

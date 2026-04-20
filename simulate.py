@@ -771,6 +771,7 @@ async def broadcast(message: dict):
 
 def build_html(config: dict) -> str:
     html = open(os.path.join(os.path.dirname(__file__), 'render.html')).read()
+    html.replace('MAINSCRIPT', open(os.path.join(os.path.dirname(__file__), 'render.js')).read())
     return html.replace('CONFIG_JSON', json.dumps(config))
 
 
