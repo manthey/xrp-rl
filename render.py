@@ -17,8 +17,8 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 import uvicorn
 
-FIELD_LENGTH_MM = 2500
-FIELD_WIDTH_MM = 1500
+FIELD_LENGTH_MM = 2175
+FIELD_WIDTH_MM = 1150
 GOAL_WIDTH_MM = 500
 GOAL_DEPTH_MM = 120
 CORNER_RADIUS_MM = 250
@@ -34,9 +34,9 @@ WHEEL_RADIUS_MM = WHEEL_DIAMETER_MM / 2
 WHEEL_BASE_MM = 155.0
 TICKS_PER_REV = 585
 MM_PER_TICK = math.pi * WHEEL_DIAMETER_MM / TICKS_PER_REV
-MAX_WHEEL_SPEED_MMPS = 150.0
+MAX_WHEEL_SPEED_MMPS = 250.0
 
-FRICTION_PER_SEC = 80.0
+FRICTION_PER_SEC = 40.0
 RESTITUTION = 0.9
 SIM_HZ = 60
 
@@ -645,7 +645,7 @@ function makeJoystick(robotId) {
     jctx.strokeStyle = '#444';
     jctx.lineWidth = 1;
     jctx.stroke();
-    const kx = cx + state.dx * maxR;
+    const kx = cx - state.dx * maxR;
     const ky = cy - state.dy * maxR;
     jctx.beginPath();
     jctx.arc(kx, ky, knobR, 0, 2 * Math.PI);
@@ -665,7 +665,7 @@ function makeJoystick(robotId) {
 
   function updateFromOffset(ox, oy) {
     const cx = size / 2, cy = size / 2;
-    let dx = (ox - cx) / (size / 2 - knobR - 4);
+    let dx = -(ox - cx) / (size / 2 - knobR - 4);
     let dy = -(oy - cy) / (size / 2 - knobR - 4);
     const mag = Math.sqrt(dx * dx + dy * dy);
     if (mag > 1) { dx /= mag; dy /= mag; }
@@ -859,7 +859,7 @@ function drawRobots() {
 
     ctx.fillStyle = '#ffffff';
     ctx.font = `${Math.max(9, Math.round(s(40)))}px monospace`;
-    ctx.fillText(id, cx + len2 + 4, cy);
+    ctx.fillText(id, cx, cy);
   }
 }
 
