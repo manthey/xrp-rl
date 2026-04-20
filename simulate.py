@@ -211,29 +211,38 @@ def robots_overlap(r1, r2):
 def constrain_robot_to_field(robot):
     rx = robot.get('world_x_mm', 0.0)
     ry = robot.get('world_y_mm', 0.0)
-    heading_rad = math.radians(robot.get('world_heading_deg', 0.0))
+    rh = math.radians(robot.get('world_heading_deg', 0.0))
     half_len = ROBOT_LENGTH_MM / 2
     half_wid = ROBOT_WIDTH_MM / 2
-    corners = robot_corners(rx, ry, heading_rad, half_len, half_wid)
+    corners = robot_corners(rx, ry, rh, half_len, half_wid)
     all_in = all(point_in_field(cx, cy) for cx, cy in corners)
     if all_in:
         return
     max_shift = max(ROBOT_LENGTH_MM, ROBOT_WIDTH_MM)
-    best_rx, best_ry = rx, ry
+    max_h = math.radians(5)
+    best_rx, best_ry, best_rh = rx, ry, rh
     best_distance = float('inf')
-    for offset_x in range(-int(max_shift), int(max_shift) + 1, 1):
-        for offset_y in range(-int(max_shift), int(max_shift) + 1, 1):
-            test_x = rx + offset_x
-            test_y = ry + offset_y
-            test_corners = robot_corners(test_x, test_y, heading_rad, half_len, half_wid)
-            if all(point_in_field(cx, cy) for cx, cy in test_corners):
-                dist = offset_x * offset_x + offset_y * offset_y
-                if dist < best_distance:
-                    best_distance = dist
-                    best_rx = test_x
-                    best_ry = test_y
+    while max_shift >= 0.5:
+        last_rx, last_ry, last_rh = best_rx, best_ry, best_rh
+        for oy in range(3):
+            for ox in range(3):
+                for oh in range(3):
+                    test_x = last_rx + (ox if ox != 2 else -1) * max_shift
+                    test_y = last_ry + (oy if oy != 2 else -1) * max_shift
+                    test_h = last_rh + (oh if oh != 2 else -1) * max_h
+                    test_corners = robot_corners(test_x, test_y, test_h, half_len, half_wid)
+                    if all(point_in_field(cx, cy) for cx, cy in test_corners):
+                        dist = (test_x - rx) ** 2 + (test_y - ry) ** 2
+                        if dist < best_distance:
+                            best_distance = dist
+                            best_rx = test_x
+                            best_ry = test_y
+                            best_rh = test_h
+        max_shift /= 2
+        max_h /= 2
     robot['world_x_mm'] = best_rx
     robot['world_y_mm'] = best_ry
+    robot['world_heading_deg'] = math.degrees(best_rh)
 
 
 def resolve_robot_overlaps():
