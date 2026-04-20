@@ -32,7 +32,6 @@ BALL_RADIUS_MM = BALL_DIAMETER_MM / 2
 TAPE_WIDTH_MM = 25
 
 WHEEL_DIAMETER_MM = 60.0
-WHEEL_RADIUS_MM = WHEEL_DIAMETER_MM / 2
 WHEEL_BASE_MM = 155.0
 TICKS_PER_REV = 585
 MM_PER_TICK = math.pi * WHEEL_DIAMETER_MM / TICKS_PER_REV
@@ -49,7 +48,6 @@ TAPE_LINES = [
     {'x_mm': -FIELD_LENGTH_MM / 2 + 1, 'color': 'blue'},
     {'x_mm': FIELD_LENGTH_MM / 2 - 1, 'color': 'red'},
 ]
-
 FIELD_CONFIG = {
     'field_length_mm': FIELD_LENGTH_MM,
     'field_width_mm': FIELD_WIDTH_MM,
@@ -67,6 +65,14 @@ FIELD_CONFIG = {
     'wheel_base_mm': WHEEL_BASE_MM,
     'max_wheel_speed_mmps': MAX_WHEEL_SPEED_MMPS,
 }
+ball_state: dict = {
+    'world_x_mm': 0.0,
+    'world_y_mm': 0.0,
+    'vel_x_mmps': 0.0,
+    'vel_y_mmps': 0.0,
+}
+robots: dict[str, dict] = {}
+websocket_clients: list[WebSocket] = []
 
 
 class RobotPose:
@@ -249,16 +255,6 @@ def step_virtual_robot(robot: dict, dt: float):
 
 def clamp_speed(v: float) -> float:
     return max(-MAX_WHEEL_SPEED_MMPS, min(MAX_WHEEL_SPEED_MMPS, v))
-
-
-ball_state: dict = {
-    'world_x_mm': 0.0,
-    'world_y_mm': 0.0,
-    'vel_x_mmps': 0.0,
-    'vel_y_mmps': 0.0,
-}
-robots: dict[str, dict] = {}
-websocket_clients: list[WebSocket] = []
 
 
 async def simulation_loop():
