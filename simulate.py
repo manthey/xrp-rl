@@ -12,6 +12,7 @@ import asyncio
 import json
 import math
 import os
+import random
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -118,6 +119,164 @@ class RobotPose:
     def partial_correct_y(self, y_mm: float):
         self.y_mm = y_mm
         self.accuracy = min(1.0, self.accuracy + 0.3)
+
+
+def ray_line_intersect(rx, ry, dx, dy, x1, y1, x2, y2):
+    lx = x2 - x1
+    ly = y2 - y1
+    denom = dx * ly - dy * lx
+    if abs(denom) < 1e-10:
+        return None
+    t = ((x1 - rx) * ly - (y1 - ry) * lx) / denom
+    s = ((x1 - rx) * dy - (y1 - ry) * dx) / denom
+    if t >= 0 and 0 <= s <= 1:
+        return t
+    return None
+
+
+def ray_circle_intersect(rx, ry, dx, dy, cx, cy, r):
+    fx = rx - cx
+    fy = ry - cy
+    a = dx * dx + dy * dy
+    b = 2 * (fx * dx + fy * dy)
+    c = fx * fx + fy * fy - r * r
+    disc = b * b - 4 * a * c
+    if disc < 0:
+        return None
+    t1 = (-b - math.sqrt(disc)) / (2 * a)
+    if t1 >= 0:
+        return t1
+    t2 = (-b + math.sqrt(disc)) / (2 * a)
+    if t2 >= 0:
+        return t2
+    return None
+
+
+def ray_to_field_boundary(rx, ry, dx, dy):  # noqa
+    half_len = FIELD_LENGTH_MM / 2
+    half_wid = FIELD_WIDTH_MM / 2
+    goal_half = GOAL_WIDTH_MM / 2
+    min_t = None
+    t = ray_line_intersect(rx, ry, dx, dy, -half_len, half_wid, half_len, half_wid)
+    if t is not None:
+        min_t = t if min_t is None else min(min_t, t)
+    t = ray_line_intersect(rx, ry, dx, dy, -half_len, -half_wid, half_len, -half_wid)
+    if t is not None:
+        min_t = t if min_t is None else min(min_t, t)
+    t = ray_line_intersect(rx, ry, dx, dy, -half_len, -half_wid, -half_len, -goal_half)
+    if t is not None:
+        min_t = t if min_t is None else min(min_t, t)
+    t = ray_line_intersect(rx, ry, dx, dy, -half_len, goal_half, -half_len, half_wid)
+    if t is not None:
+        min_t = t if min_t is None else min(min_t, t)
+    t = ray_line_intersect(rx, ry, dx, dy, half_len, -half_wid, half_len, -goal_half)
+    if t is not None:
+        min_t = t if min_t is None else min(min_t, t)
+    t = ray_line_intersect(rx, ry, dx, dy, half_len, goal_half, half_len, half_wid)
+    if t is not None:
+        min_t = t if min_t is None else min(min_t, t)
+    goal_back = half_len + GOAL_DEPTH_MM
+    t = ray_line_intersect(rx, ry, dx, dy, -goal_back, -goal_half, -goal_back, goal_half)
+    if t is not None:
+        min_t = t if min_t is None else min(min_t, t)
+    t = ray_line_intersect(rx, ry, dx, dy, -half_len, -goal_half, -goal_back, -goal_half)
+    if t is not None:
+        min_t = t if min_t is None else min(min_t, t)
+    t = ray_line_intersect(rx, ry, dx, dy, -half_len, goal_half, -goal_back, goal_half)
+    if t is not None:
+        min_t = t if min_t is None else min(min_t, t)
+    t = ray_line_intersect(rx, ry, dx, dy, goal_back, -goal_half, goal_back, goal_half)
+    if t is not None:
+        min_t = t if min_t is None else min(min_t, t)
+    t = ray_line_intersect(rx, ry, dx, dy, half_len, -goal_half, goal_back, -goal_half)
+    if t is not None:
+        min_t = t if min_t is None else min(min_t, t)
+    t = ray_line_intersect(rx, ry, dx, dy, half_len, goal_half, goal_back, goal_half)
+    if t is not None:
+        min_t = t if min_t is None else min(min_t, t)
+    inner_x = half_len - CORNER_RADIUS_MM
+    inner_y = half_wid - CORNER_RADIUS_MM
+    for cx in (-inner_x, inner_x):
+        for cy in (-inner_y, inner_y):
+            t = ray_circle_intersect(rx, ry, dx, dy, cx, cy, CORNER_RADIUS_MM)
+            if t is not None:
+                px = rx + dx * t
+                py = ry + dy * t
+                if (px - cx) * cx > 0 and (py - cy) * cy > 0:
+                    min_t = t if min_t is None else min(min_t, t)
+    return min_t
+
+
+def ray_to_ball(rx, ry, dx, dy, ball):
+    bx = ball['world_x_mm']
+    by = ball['world_y_mm']
+    t = ray_circle_intersect(rx, ry, dx, dy, bx, by, BALL_RADIUS_MM)
+    return t
+
+
+def ray_to_robot(rx, ry, dx, dy, other_robot):
+    ox = other_robot.get('world_x_mm')
+    oy = other_robot.get('world_y_mm')
+    if ox is None or oy is None:
+        return None
+    oh = math.radians(other_robot.get('world_heading_deg', 0.0))
+    half_len = ROBOT_LENGTH_MM / 2
+    half_wid = ROBOT_WIDTH_MM / 2
+    points = robot_corners(ox, oy, oh, half_len, half_wid)
+    min_t = None
+    for px, py in points:
+        vx = px - rx
+        vy = py - ry
+        proj = vx * dx + vy * dy
+        if proj > 0:
+            cross_dist = abs(vx * dy - vy * dx)
+            if cross_dist < 50:
+                min_t = proj if min_t is None else min(min_t, proj)
+    robot_radius = math.sqrt(half_len**2 + half_wid**2)
+    t = ray_circle_intersect(rx, ry, dx, dy, ox, oy, robot_radius)
+    if t is not None:
+        min_t = t if min_t is None else min(min_t, t)
+    return min_t
+
+
+def generate_distance_reading(robot, robots_dict, ball):
+    rx = robot.get('world_x_mm')
+    ry = robot.get('world_y_mm')
+    if rx is None or ry is None:
+        return 65535
+    heading_rad = math.radians(robot.get('world_heading_deg', 0.0))
+    dx = math.cos(heading_rad)
+    dy = math.sin(heading_rad)
+    min_distance = None
+    t = ray_to_field_boundary(rx, ry, dx, dy)
+    if t is not None and t > 0:
+        min_distance = t if min_distance is None else min(min_distance, t)
+    t = ray_to_ball(rx, ry, dx, dy, ball)
+    if t is not None and t > 0:
+        min_distance = t if min_distance is None else min(min_distance, t)
+    robot_id = robot.get('robot_id')
+    for other_id, other in robots_dict.items():
+        if other_id == robot_id:
+            continue
+        t = ray_to_robot(rx, ry, dx, dy, other)
+        if t is not None and t > 0:
+            min_distance = t if min_distance is None else min(min_distance, t)
+    if min_distance is None or min_distance < 0:
+        return 65535
+    distance_mm = min_distance
+    if distance_mm < 20:
+        if random.random() < 0.5:
+            return 65535
+        distance_mm = 20
+    noise_std = 0.5 + distance_mm * 0.01
+    distance_mm += random.gauss(0, noise_std)
+    far_noise = 800
+    if random.random() < 0.15 * (distance_mm - far_noise) / (1000 - far_noise):
+        return 65535
+    if distance_mm > 1000:
+        return 65535
+    distance_cm = distance_mm / 10.0
+    return max(0, min(65535, distance_cm))
 
 
 def closest_point_on_rounded_rect(px, py, cx, cy, half_len, half_wid, corner_r, heading_rad):
@@ -449,6 +608,9 @@ async def simulation_loop():
         if abs(vx) < 0.5 and abs(vy) < 0.5:
             ball_state['vel_x_mmps'] = 0.0
             ball_state['vel_y_mmps'] = 0.0
+        for robot in robots.values():
+            if robot.get('virtual'):
+                robot['distance_cm'] = generate_distance_reading(robot, robots, ball_state)
         virtual_updates = {
             rid: dict(rob) for rid, rob in robots.items() if rob.get('virtual')
         }
