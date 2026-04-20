@@ -20,7 +20,7 @@
   td, th { border: 1px solid #444; padding: 3px 6px; }
   th { background: #333; }
   .section-title { margin: 10px 0 4px; font-weight: bold; font-size: 13px; }
-  input[type=number] { width: 70px; background: #333; color: #e0e0e0; border: 1px solid #666; }
+  input[inputmode=numeric] { width: 70px; background: #333; color: #e0e0e0; border: 1px solid #666; }
   input[type=text]   { background: #333; color: #e0e0e0; border: 1px solid #666; }
   button { background: #555; color: #e0e0e0; border: 1px solid #888; cursor: pointer; padding: 2px 8px; }
   button:hover { background: #777; }
@@ -50,17 +50,17 @@
   <div class="section-title">Pose Override / Create Virtual Robot</div>
   <div>
     Robot ID: <input id="ov-id" type="text" style="width:80px">
-    X mm: <input id="ov-x" type="number" value="0">
-    Y mm: <input id="ov-y" type="number" value="0">
-    Hdg: <input id="ov-hdg" type="number" value="0">
+    X mm: <input id="ov-x" type="text" inputmode="numeric" value="0">
+    Y mm: <input id="ov-y" type="text" inputmode="numeric" value="0">
+    Hdg: <input id="ov-hdg" type="text" inputmode="numeric" value="0">
     <button onclick="sendOverride()">Set</button>
   </div>
   <div class="section-title">Ball Control</div>
   <div>
-    X mm: <input id="ball-x" type="number" value="0">
-    Y mm: <input id="ball-y" type="number" value="0">
-    Vel X mm/s: <input id="ball-vx" type="number" value="0">
-    Vel Y mm/s: <input id="ball-vy" type="number" value="0">
+    X mm: <input id="ball-x" type="text" inputmode="numeric" value="0">
+    Y mm: <input id="ball-y" type="text" inputmode="numeric" value="0">
+    Vel X mm/s: <input id="ball-vx" type="text" inputmode="numeric" value="0">
+    Vel Y mm/s: <input id="ball-vy" type="text" inputmode="numeric" value="0">
     <button onclick="sendBallState()">Set</button>
   </div>
   <div class="section-title">Virtual Robot Controls</div>
@@ -165,9 +165,11 @@ function makeJoystick(robotId) {
   function updateFromOffset(ox, oy) {
     const cx = size / 2, cy = size / 2;
     let dx = -(ox - cx) / (size / 2 - knobR - 4);
+    if (Math.abs(dx) < 0.2) { dx = 0; }
+    if (Math.abs(dx) > 1.0) { dx = Math.sign(dx); }
     let dy = -(oy - cy) / (size / 2 - knobR - 4);
-    const mag = Math.sqrt(dx * dx + dy * dy);
-    if (mag > 1) { dx /= mag; dy /= mag; }
+    if (Math.abs(dy) < 0.2) { dy = 0; }
+    if (Math.abs(dy) > 1.0) { dy = Math.sign(dy); }
     state.dx = dx;
     state.dy = dy;
     sendVelocity(robotId, dx, dy, velLabel);
