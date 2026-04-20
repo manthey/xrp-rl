@@ -272,20 +272,19 @@ async def simulation_loop():
         vy = ball_state['vel_y_mmps']
         bx = ball_state['world_x_mm']
         by = ball_state['world_y_mm']
+        bx += vx * dt
+        by += vy * dt
+        for robot in robots.values():
+            bx, by, vx, vy = collide_ball_with_robot(bx, by, vx, vy, robot)
+        bx, by, vx, vy = field_boundary_response(bx, by, vx, vy, BALL_RADIUS_MM)
+        vx, vy = apply_friction(vx, vy, dt)
+        ball_state['world_x_mm'] = bx
+        ball_state['world_y_mm'] = by
+        ball_state['vel_x_mmps'] = vx
+        ball_state['vel_y_mmps'] = vy
         if abs(vx) < 0.5 and abs(vy) < 0.5:
             ball_state['vel_x_mmps'] = 0.0
             ball_state['vel_y_mmps'] = 0.0
-        else:
-            bx += vx * dt
-            by += vy * dt
-            for robot in robots.values():
-                bx, by, vx, vy = collide_ball_with_robot(bx, by, vx, vy, robot)
-            bx, by, vx, vy = field_boundary_response(bx, by, vx, vy, BALL_RADIUS_MM)
-            vx, vy = apply_friction(vx, vy, dt)
-            ball_state['world_x_mm'] = bx
-            ball_state['world_y_mm'] = by
-            ball_state['vel_x_mmps'] = vx
-            ball_state['vel_y_mmps'] = vy
         virtual_updates = {
             rid: dict(rob) for rid, rob in robots.items() if rob.get('virtual')
         }
