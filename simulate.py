@@ -128,15 +128,31 @@ def closest_point_on_rounded_rect(px, py, cx, cy, half_len, half_wid, corner_r, 
     sin_h = math.sin(-heading_rad)
     lx = (px - cx) * cos_h - (py - cy) * sin_h
     ly = (px - cx) * sin_h + (py - cy) * cos_h
+
     inner_half_len = half_len - corner_r
     inner_half_wid = half_wid - corner_r
+
     clamped_x = max(-inner_half_len, min(inner_half_len, lx))
     clamped_y = max(-inner_half_wid, min(inner_half_wid, ly))
+
+    ox = lx - clamped_x
+    oy = ly - clamped_y
+    olen = math.sqrt(ox * ox + oy * oy)
+    if olen > 0:
+        scale = corner_r / olen
+        surface_lx = clamped_x + ox * scale
+        surface_ly = clamped_y + oy * scale
+        inside = olen < corner_r
+    else:
+        surface_lx = clamped_x + corner_r
+        surface_ly = clamped_y
+        inside = True
+
     cos_fwd = math.cos(heading_rad)
     sin_fwd = math.sin(heading_rad)
-    wx = cx + clamped_x * cos_fwd - clamped_y * sin_fwd
-    wy = cy + clamped_x * sin_fwd + clamped_y * cos_fwd
-    return wx, wy
+    wx = cx + surface_lx * cos_fwd - surface_ly * sin_fwd
+    wy = cy + surface_lx * sin_fwd + surface_ly * cos_fwd
+    return wx, wy, inside
 
 
 def ball_inside_rounded_rect(px, py, cx, cy, half_len, half_wid, corner_r, heading_rad):
@@ -242,22 +258,46 @@ def collide_ball_with_robot(bx, by, vx, vy, robot):
     half_len = ROBOT_LENGTH_MM / 2
     half_wid = ROBOT_WIDTH_MM / 2
     corner_r = ROBOT_CORNER_RADIUS_MM
-    cpx, cpy = closest_point_on_rounded_rect(
+    cpx, cpy, inside = closest_point_on_rounded_rect(
         bx, by, rx, ry, half_len, half_wid, corner_r, heading_rad)
     dx = bx - cpx
     dy = by - cpy
     dist = math.sqrt(dx * dx + dy * dy)
-    if dist == 0 or dist >= BALL_RADIUS_MM:
-        return bx, by, vx, vy
-    nx = dx / dist
-    ny = dy / dist
-    penetration = BALL_RADIUS_MM - dist
+    if inside:
+        penetration = BALL_RADIUS_MM + dist
+        if dist > 0:
+            nx = -dx / dist
+            ny = -dy / dist
+        else:
+            nx, ny = 1.0, 0.0
+    else:
+        if dist >= BALL_RADIUS_MM:
+            return bx, by, vx, vy
+        if dist > 0:
+            nx = dx / dist
+            ny = dy / dist
+        else:
+            nx, ny = 1.0, 0.0
+        penetration = BALL_RADIUS_MM - dist
     new_bx = bx + nx * penetration
     new_by = by + ny * penetration
-    dot = vx * nx + vy * ny
-    if dot < 0:
-        new_vx = vx - (1 + RESTITUTION) * dot * nx
-        new_vy = vy - (1 + RESTITUTION) * dot * ny
+    vl = robot.get('cmd_vel_left', 0.0)
+    vr = robot.get('cmd_vel_right', 0.0)
+    forward_speed = (vl + vr) / 2.0
+    angular_speed = (vr - vl) / WHEEL_BASE_MM
+    fwd_x = math.cos(heading_rad)
+    fwd_y = math.sin(heading_rad)
+    contact_rx = cpx - rx
+    contact_ry = cpy - ry
+    robot_vx = forward_speed * fwd_x - angular_speed * contact_ry
+    robot_vy = forward_speed * fwd_y + angular_speed * contact_rx
+    rel_vx = vx - robot_vx
+    rel_vy = vy - robot_vy
+    rel_dot = rel_vx * nx + rel_vy * ny
+    if rel_dot < 0:
+        impulse = -(1 + RESTITUTION) * rel_dot
+        new_vx = vx + impulse * nx
+        new_vy = vy + impulse * ny
     else:
         new_vx, new_vy = vx, vy
     return new_bx, new_by, new_vx, new_vy
