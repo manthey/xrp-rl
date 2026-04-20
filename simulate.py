@@ -147,6 +147,123 @@ def closest_point_on_rounded_rect(px, py, cx, cy, half_len, half_wid, corner_r, 
     return wx, wy, inside
 
 
+def point_in_field(px, py):
+    half_len = FIELD_LENGTH_MM / 2
+    half_wid = FIELD_WIDTH_MM / 2
+    goal_half = GOAL_WIDTH_MM / 2
+    if abs(px) > half_len and abs(py) < goal_half:
+        if abs(px) <= half_len + GOAL_DEPTH_MM:
+            return True
+        return False
+    if abs(py) > half_wid:
+        return False
+    if abs(py) >= goal_half and abs(px) > half_len:
+        return False
+    inner_x = half_len - CORNER_RADIUS_MM
+    inner_y = half_wid - CORNER_RADIUS_MM
+    for ccx in (-inner_x, inner_x):
+        for ccy in (-inner_y, inner_y):
+            if (px - ccx) * ccx > 0 and (py - ccy) * ccy > 0:
+                dx, dy = px - ccx, py - ccy
+                if dx * dx + dy * dy > CORNER_RADIUS_MM * CORNER_RADIUS_MM:
+                    return False
+    return True
+
+
+def robot_corners(rx, ry, heading_rad, half_len, half_wid):
+    cos_h = math.cos(heading_rad)
+    sin_h = math.sin(heading_rad)
+    corners = []
+    for lx in (-half_len, half_len):
+        for ly in (-half_wid, half_wid):
+            wx = rx + lx * cos_h - ly * sin_h
+            wy = ry + lx * sin_h + ly * cos_h
+            corners.append((wx, wy))
+    return corners
+
+
+def robots_overlap(r1, r2):
+    rx1 = r1.get('world_x_mm')
+    ry1 = r1.get('world_y_mm')
+    rx2 = r2.get('world_x_mm')
+    ry2 = r2.get('world_y_mm')
+    if rx1 is None or ry1 is None or rx2 is None or ry2 is None:
+        return False
+    heading1 = math.radians(r1.get('world_heading_deg', 0))
+    heading2 = math.radians(r2.get('world_heading_deg', 0))
+    half_len = ROBOT_LENGTH_MM / 2
+    half_wid = ROBOT_WIDTH_MM / 2
+    corners1 = robot_corners(rx1, ry1, heading1, half_len, half_wid)
+    corners2 = robot_corners(rx2, ry2, heading2, half_len, half_wid)
+    for cx, cy in corners1:
+        _, _, inside = closest_point_on_rounded_rect(
+            cx, cy, rx2, ry2, half_len, half_wid, ROBOT_CORNER_RADIUS_MM, heading2)
+        if inside:
+            return True
+    for cx, cy in corners2:
+        _, _, inside = closest_point_on_rounded_rect(
+            cx, cy, rx1, ry1, half_len, half_wid, ROBOT_CORNER_RADIUS_MM, heading1)
+        if inside:
+            return True
+    return False
+
+
+def constrain_robot_to_field(robot):
+    rx = robot.get('world_x_mm', 0.0)
+    ry = robot.get('world_y_mm', 0.0)
+    heading_rad = math.radians(robot.get('world_heading_deg', 0.0))
+    half_len = ROBOT_LENGTH_MM / 2
+    half_wid = ROBOT_WIDTH_MM / 2
+    corners = robot_corners(rx, ry, heading_rad, half_len, half_wid)
+    all_in = all(point_in_field(cx, cy) for cx, cy in corners)
+    if all_in:
+        return
+    max_shift = max(ROBOT_LENGTH_MM, ROBOT_WIDTH_MM)
+    best_rx, best_ry = rx, ry
+    best_distance = float('inf')
+    for offset_x in range(-int(max_shift), int(max_shift) + 1, 1):
+        for offset_y in range(-int(max_shift), int(max_shift) + 1, 1):
+            test_x = rx + offset_x
+            test_y = ry + offset_y
+            test_corners = robot_corners(test_x, test_y, heading_rad, half_len, half_wid)
+            if all(point_in_field(cx, cy) for cx, cy in test_corners):
+                dist = offset_x * offset_x + offset_y * offset_y
+                if dist < best_distance:
+                    best_distance = dist
+                    best_rx = test_x
+                    best_ry = test_y
+    robot['world_x_mm'] = best_rx
+    robot['world_y_mm'] = best_ry
+
+
+def resolve_robot_overlaps():
+    robot_list = list(robots.values())
+    for i in range(len(robot_list)):
+        for j in range(i + 1, len(robot_list)):
+            r1 = robot_list[i]
+            r2 = robot_list[j]
+            if robots_overlap(r1, r2):
+                rx1 = r1.get('world_x_mm', 0.0)
+                ry1 = r1.get('world_y_mm', 0.0)
+                rx2 = r2.get('world_x_mm', 0.0)
+                ry2 = r2.get('world_y_mm', 0.0)
+                dx = rx2 - rx1
+                dy = ry2 - ry1
+                dist = math.sqrt(dx * dx + dy * dy)
+                if dist > 0:
+                    nx, ny = dx / dist, dy / dist
+                else:
+                    nx, ny = 1.0, 0.0
+                separation = (ROBOT_LENGTH_MM + ROBOT_WIDTH_MM) / 2
+                push = separation / 2
+                r1['world_x_mm'] = rx1 - nx * push
+                r1['world_y_mm'] = ry1 - ny * push
+                r2['world_x_mm'] = rx2 + nx * push
+                r2['world_y_mm'] = ry2 + ny * push
+                constrain_robot_to_field(r1)
+                constrain_robot_to_field(r2)
+
+
 def field_boundary_response(bx, by, vx, vy, radius):  # noqa
     half_len = FIELD_LENGTH_MM / 2
     half_wid = FIELD_WIDTH_MM / 2
@@ -264,6 +381,9 @@ async def simulation_loop():
         for robot in robots.values():
             if robot.get('virtual'):
                 step_virtual_robot(robot, dt)
+        for robot in robots.values():
+            constrain_robot_to_field(robot)
+        resolve_robot_overlaps()
         vx = ball_state['vel_x_mmps']
         vy = ball_state['vel_y_mmps']
         bx = ball_state['world_x_mm']
@@ -373,6 +493,8 @@ async def override_pose(override: PoseOverride):
     robots[robot_id]['world_x_mm'] = override.world_x_mm
     robots[robot_id]['world_y_mm'] = override.world_y_mm
     robots[robot_id]['world_heading_deg'] = override.world_heading_deg
+    constrain_robot_to_field(robots[robot_id])
+    resolve_robot_overlaps()
     await broadcast({'type': 'pose_override', 'data': override.model_dump()})
     return {'status': 'ok'}
 
