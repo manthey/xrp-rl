@@ -27,27 +27,25 @@ CORNER_RADIUS_MM = 250
 ROBOT_SIZE_MM = 200
 BALL_DIAMETER_MM = 100
 TAPE_WIDTH_MM = 25
-SCALE = 0.32
 
 TAPE_LINES = [
-    {"x_mm": -FIELD_LENGTH_MM / 4,         "color": "blue"},
-    {"x_mm":  FIELD_LENGTH_MM / 4,         "color": "red"},
-    {"x_mm":  0,                            "color": "white"},
-    {"x_mm": -FIELD_LENGTH_MM / 2 + 1,     "color": "blue"},
-    {"x_mm":  FIELD_LENGTH_MM / 2 - 1,     "color": "red"},
+    {"x_mm": -FIELD_LENGTH_MM / 4,     "color": "blue"},
+    {"x_mm":  FIELD_LENGTH_MM / 4,     "color": "red"},
+    {"x_mm":  0,                        "color": "white"},
+    {"x_mm": -FIELD_LENGTH_MM / 2 + 1, "color": "blue"},
+    {"x_mm":  FIELD_LENGTH_MM / 2 - 1, "color": "red"},
 ]
 
 FIELD_CONFIG = {
     "field_length_mm": FIELD_LENGTH_MM,
-    "field_width_mm": FIELD_WIDTH_MM,
-    "goal_width_mm": GOAL_WIDTH_MM,
-    "goal_depth_mm": GOAL_DEPTH_MM,
+    "field_width_mm":  FIELD_WIDTH_MM,
+    "goal_width_mm":   GOAL_WIDTH_MM,
+    "goal_depth_mm":   GOAL_DEPTH_MM,
     "corner_radius_mm": CORNER_RADIUS_MM,
-    "robot_size_mm": ROBOT_SIZE_MM,
+    "robot_size_mm":   ROBOT_SIZE_MM,
     "ball_diameter_mm": BALL_DIAMETER_MM,
-    "tape_width_mm": TAPE_WIDTH_MM,
-    "scale": SCALE,
-    "tape_lines": TAPE_LINES,
+    "tape_width_mm":   TAPE_WIDTH_MM,
+    "tape_lines":      TAPE_LINES,
 }
 
 
@@ -144,84 +142,109 @@ def build_html(config: dict) -> str:
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>XRP Soccer Field</title>
 <style>
-  body { background: #1a1a1a; color: #e0e0e0; font-family: monospace; margin: 0; padding: 10px; }
-  #layout { display: flex; gap: 10px; }
-  #canvas-container { flex: 0 0 auto; }
-  #panel { flex: 1; min-width: 260px; }
-  canvas { display: block; background: #2d6a2d; }
+  * { box-sizing: border-box; }
+  body {
+    background: #1a1a1a;
+    color: #e0e0e0;
+    font-family: monospace;
+    margin: 0;
+    padding: 0;
+  }
+  #canvas-container {
+    width: 100vw;
+    overflow: hidden;
+  }
+  canvas {
+    display: block;
+    background: #2d6a2d;
+    width: 100%;
+    height: auto;
+  }
+  #panel {
+    padding: 10px;
+  }
   table { border-collapse: collapse; width: 100%; font-size: 11px; }
   td, th { border: 1px solid #444; padding: 3px 6px; }
   th { background: #333; }
   .section-title { margin: 10px 0 4px; font-weight: bold; font-size: 13px; }
   input[type=number] { width: 70px; background: #333; color: #e0e0e0; border: 1px solid #666; }
-  input[type=text] { background: #333; color: #e0e0e0; border: 1px solid #666; }
+  input[type=text]   { background: #333; color: #e0e0e0; border: 1px solid #666; }
   button { background: #555; color: #e0e0e0; border: 1px solid #888; cursor: pointer; padding: 2px 8px; }
   button:hover { background: #777; }
 </style>
 </head>
 <body>
-<div id="layout">
-  <div id="canvas-container">
-    <canvas id="field"></canvas>
-  </div>
-  <div id="panel">
-    <div class="section-title">Robots</div>
-    <table id="robot-table">
-      <thead><tr>
-        <th>ID</th><th>X mm</th><th>Y mm</th><th>Hdg</th>
-        <th>Dist cm</th><th>Refl L</th><th>Refl R</th>
-        <th>Enc L</th><th>Enc R</th>
-      </tr></thead>
-      <tbody id="robot-tbody"></tbody>
-    </table>
-    <div class="section-title">Pose Override</div>
-    <div>
-      Robot ID: <input id="ov-id" type="text" style="width:80px">
-      X mm: <input id="ov-x" type="number" value="0">
-      Y mm: <input id="ov-y" type="number" value="0">
-      Hdg: <input id="ov-hdg" type="number" value="0">
-      <button onclick="sendOverride()">Set</button>
-    </div>
+<div id="canvas-container">
+  <canvas id="field"></canvas>
+</div>
+<div id="panel">
+  <div class="section-title">Robots</div>
+  <table id="robot-table">
+    <thead><tr>
+      <th>ID</th><th>X mm</th><th>Y mm</th><th>Hdg</th>
+      <th>Dist cm</th><th>Refl L</th><th>Refl R</th>
+      <th>Enc L</th><th>Enc R</th>
+    </tr></thead>
+    <tbody id="robot-tbody"></tbody>
+  </table>
+  <div class="section-title">Pose Override</div>
+  <div>
+    Robot ID: <input id="ov-id" type="text" style="width:80px">
+    X mm: <input id="ov-x" type="number" value="0">
+    Y mm: <input id="ov-y" type="number" value="0">
+    Hdg: <input id="ov-hdg" type="number" value="0">
+    <button onclick="sendOverride()">Set</button>
   </div>
 </div>
 <script>
 const C = """ + config_json + r""";
 
-const s = mm => mm * C.scale;
-
 const canvas = document.getElementById('field');
 const ctx = canvas.getContext('2d');
-const gd = Math.round(s(C.goal_depth_mm));
-canvas.width  = Math.round(s(C.field_length_mm)) + 2 + gd * 2;
-canvas.height = Math.round(s(C.field_width_mm))  + 2;
 
-let robots = {};
-let ball = {world_x_mm: 0, world_y_mm: 0};
+let scale = 1;
+let gd = 0;
+
+function computeLayout() {
+  const availableWidth = window.innerWidth;
+  const goalDepthFraction = 2 * C.goal_depth_mm / C.field_length_mm;
+  scale = availableWidth / (C.field_length_mm + 2 * C.goal_depth_mm + 2);
+  gd = Math.round(scale * C.goal_depth_mm);
+  canvas.width  = availableWidth;
+  canvas.height = Math.round(scale * C.field_width_mm) + 2;
+}
+
+const s = mm => mm * scale;
 
 function fieldToCanvas(x, y) {
   return [
-    (x + C.field_length_mm / 2) * C.scale + 1 + gd,
-    (C.field_width_mm / 2 - y) * C.scale + 1,
+    (x + C.field_length_mm / 2) * scale + 1 + gd,
+    (C.field_width_mm / 2 - y) * scale + 1,
   ];
 }
+
+let robots = {};
+let ball = {world_x_mm: 0, world_y_mm: 0};
 
 function drawField() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.save();
 
-  const fw = s(C.field_length_mm);
-  const fh = s(C.field_width_mm);
-  const r  = s(C.corner_radius_mm);
-  const gw = s(C.goal_width_mm);
-  const ox = 1 + gd, oy = 1;
+  const fw   = s(C.field_length_mm);
+  const fh   = s(C.field_width_mm);
+  const r    = s(C.corner_radius_mm);
+  const gw   = s(C.goal_width_mm);
+  const ox   = 1 + gd;
+  const oy   = 1;
   const gTop = oy + (fh - gw) / 2;
 
   for (const line of C.tape_lines) {
     const [lx] = fieldToCanvas(line.x_mm, 0);
     ctx.strokeStyle = line.color;
-    ctx.lineWidth = Math.round(s(C.tape_width_mm));
+    ctx.lineWidth = Math.max(1, Math.round(s(C.tape_width_mm)));
     ctx.beginPath();
     ctx.moveTo(lx, oy);
     ctx.lineTo(lx, oy + fh);
@@ -251,12 +274,7 @@ function drawField() {
     const wallDir = side === 1 ? 1 : -1;
 
     ctx.fillStyle = '#2d6a2d';
-    ctx.fillRect(
-      wallDir === 1 ? wallX : wallX - gd,
-      gTop,
-      gd,
-      gw
-    );
+    ctx.fillRect(wallDir === 1 ? wallX : wallX - gd, gTop, gd, gw);
 
     ctx.strokeStyle = '#aaaaaa';
     ctx.lineWidth = 2;
@@ -310,12 +328,13 @@ function drawRobots() {
     ctx.restore();
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = '10px monospace';
+    ctx.font = `${Math.max(9, Math.round(s(40)))}px monospace`;
     ctx.fillText(id, cx + rs + 2, cy);
   }
 }
 
 function render() {
+  computeLayout();
   drawField();
   drawBall();
   drawRobots();
@@ -358,6 +377,8 @@ function sendOverride() {
     }),
   });
 }
+
+window.addEventListener('resize', render);
 
 const ws = new WebSocket(`ws://${location.host}/ws`);
 ws.onmessage = (event) => {
