@@ -14,7 +14,7 @@
     padding: 0;
   }
   #canvas-container { width: 100vw; overflow: hidden; }
-  canvas { display: block; background: #2d6a2d; width: 100%; height: auto; }
+  #field { display: block; background: #2d6a2d; width: 100%; height: auto; }
   #panel { padding: 10px; }
   table { border-collapse: collapse; width: 100%; font-size: 11px; }
   td, th { border: 1px solid #444; padding: 3px 6px; }
@@ -28,7 +28,7 @@
   #joysticks { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 8px; }
   .joystick-wrap { display: flex; flex-direction: column; align-items: center; gap: 4px; }
   .joystick-label { font-size: 11px; }
-  .joystick-canvas { touch-action: none; cursor: grab; border: 1px solid #555; border-radius: 4px; background: #222; display: block; }
+  .joystick-canvas { touch-action: none; cursor: grab; border: 1px solid #555; border-radius: 4px; background: #222; display: block; width: 160px; height: 160px; flex: none; }
 </style>
 </head>
 <body>
@@ -99,8 +99,8 @@ const ws = new WebSocket(`ws://${location.host}/ws`);
 const joystickState = {};
 
 function makeJoystick(robotId) {
-  const size = 120;
-  const knobR = 18;
+  const size = 160;
+  const knobR = 15;
   const wrap = document.createElement('div');
   wrap.className = 'joystick-wrap';
   wrap.dataset.robotId = robotId;
