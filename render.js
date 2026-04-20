@@ -5,6 +5,14 @@ const ctx = canvas.getContext('2d');
 
 let scale = 1;
 let gd = 0;
+let robots = {};
+let ball = { world_x_mm: 0, world_y_mm: 0, vel_x_mmps: 0, vel_y_mmps: 0 };
+const joystickState = {};
+const ws = new WebSocket(`ws://${location.host}/ws`);
+
+function mmScale(mm) {
+  return mm * scale;
+}
 
 function computeLayout() {
   scale = window.innerWidth / (CONFIG.field_length_mm + 2 * CONFIG.goal_depth_mm + 2);
@@ -13,40 +21,53 @@ function computeLayout() {
   canvas.height = Math.round(scale * CONFIG.field_width_mm) + 2;
 }
 
-const mmScale = (mm) => mm * scale;
-
 function fieldToCanvas(x, y) {
   return [(x + CONFIG.field_length_mm / 2) * scale + 1 + gd, (CONFIG.field_width_mm / 2 - y) * scale + 1];
 }
 
-let robots = {};
-let ball = { world_x_mm: 0, world_y_mm: 0, vel_x_mmps: 0, vel_y_mmps: 0 };
+function createElement(tag, className, textContent) {
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  if (textContent) el.textContent = textContent;
+  return el;
+}
 
-const ws = new WebSocket(`ws://${location.host}/ws`);
+function clampDeadzone(value, deadzone = 0.2) {
+  if (Math.abs(value) < deadzone) return 0;
+  if (Math.abs(value) > 1.0) return Math.sign(value);
+  return value;
+}
 
-const joystickState = {};
+function drawCircle(context, x, y, radius, fillStyle, strokeStyle, lineWidth) {
+  context.beginPath();
+  context.arc(x, y, radius, 0, 2 * Math.PI);
+  if (fillStyle) {
+    context.fillStyle = fillStyle;
+    context.fill();
+  }
+  if (strokeStyle) {
+    context.strokeStyle = strokeStyle;
+    context.lineWidth = lineWidth;
+    context.stroke();
+  }
+}
 
 function makeJoystick(robotId) {
   const size = 160;
   const knobR = 15;
-  const wrap = document.createElement('div');
-  wrap.className = 'joystick-wrap';
+  const maxR = size / 2 - knobR - 4;
+  const cx = size / 2,
+    cy = size / 2;
+
+  const wrap = createElement('div', 'joystick-wrap');
   wrap.dataset.robotId = robotId;
+  wrap.appendChild(createElement('div', 'joystick-label', robotId));
 
-  const label = document.createElement('div');
-  label.className = 'joystick-label';
-  label.textContent = robotId;
-  wrap.appendChild(label);
-
-  const jc = document.createElement('canvas');
-  jc.className = 'joystick-canvas';
-  jc.width = size;
-  jc.height = size;
+  const jc = createElement('canvas', 'joystick-canvas');
+  jc.width = jc.height = size;
   wrap.appendChild(jc);
 
-  const velLabel = document.createElement('div');
-  velLabel.className = 'joystick-label';
-  velLabel.textContent = 'L: 0  R: 0';
+  const velLabel = createElement('div', 'joystick-label', 'L: 0  R: 0');
   wrap.appendChild(velLabel);
 
   const state = { dx: 0, dy: 0, active: false };
@@ -54,17 +75,8 @@ function makeJoystick(robotId) {
 
   function drawJoystick() {
     const jctx = jc.getContext('2d');
-    const cx = size / 2,
-      cy = size / 2;
-    const maxR = size / 2 - knobR - 4;
     jctx.clearRect(0, 0, size, size);
-    jctx.beginPath();
-    jctx.arc(cx, cy, size / 2 - 2, 0, 2 * Math.PI);
-    jctx.fillStyle = '#2a2a2a';
-    jctx.fill();
-    jctx.strokeStyle = '#555';
-    jctx.lineWidth = 1;
-    jctx.stroke();
+    drawCircle(jctx, cx, cy, size / 2 - 2, '#2a2a2a', '#555', 1);
     jctx.beginPath();
     jctx.moveTo(cx, cy - maxR);
     jctx.lineTo(cx, cy + maxR);
@@ -73,85 +85,47 @@ function makeJoystick(robotId) {
     jctx.strokeStyle = '#444';
     jctx.lineWidth = 1;
     jctx.stroke();
-    const kx = cx - state.dx * maxR;
-    const ky = cy - state.dy * maxR;
-    jctx.beginPath();
-    jctx.arc(kx, ky, knobR, 0, 2 * Math.PI);
-    jctx.fillStyle = '#888';
-    jctx.fill();
-    jctx.strokeStyle = '#bbb';
-    jctx.lineWidth = 1.5;
-    jctx.stroke();
+    drawCircle(jctx, cx - state.dx * maxR, cy - state.dy * maxR, knobR, '#888', '#bbb', 1.5);
   }
 
   function getOffsetInCanvas(e) {
     const rect = jc.getBoundingClientRect();
-    const cx = e.clientX ?? e.touches[0].clientX;
-    const cy = e.clientY ?? e.touches[0].clientY;
-    return [cx - rect.left, cy - rect.top];
+    const clientX = e.clientX ?? e.touches[0].clientX;
+    const clientY = e.clientY ?? e.touches[0].clientY;
+    return [clientX - rect.left, clientY - rect.top];
   }
 
   function updateFromOffset(ox, oy) {
-    const cx = size / 2,
-      cy = size / 2;
-    let dx = -(ox - cx) / (size / 2 - knobR - 4);
-    if (Math.abs(dx) < 0.2) {
-      dx = 0;
-    }
-    if (Math.abs(dx) > 1.0) {
-      dx = Math.sign(dx);
-    }
-    let dy = -(oy - cy) / (size / 2 - knobR - 4);
-    if (Math.abs(dy) < 0.2) {
-      dy = 0;
-    }
-    if (Math.abs(dy) > 1.0) {
-      dy = Math.sign(dy);
-    }
-    state.dx = dx;
-    state.dy = dy;
-    sendVelocity(robotId, dx, dy, velLabel);
+    state.dx = clampDeadzone(-(ox - cx) / maxR);
+    state.dy = clampDeadzone(-(oy - cy) / maxR);
+    sendVelocity(robotId, state.dx, state.dy, velLabel);
     drawJoystick();
   }
 
-  jc.addEventListener('mousedown', (e) => {
+  function onStart(e) {
+    if (e.type === 'touchstart') e.preventDefault();
     state.active = true;
-    const [ox, oy] = getOffsetInCanvas(e);
-    updateFromOffset(ox, oy);
-  });
-  jc.addEventListener(
-    'touchstart',
-    (e) => {
-      e.preventDefault();
-      state.active = true;
-      const [ox, oy] = getOffsetInCanvas(e);
-      updateFromOffset(ox, oy);
-    },
-    { passive: false },
-  );
-  window.addEventListener('mousemove', (e) => {
+    updateFromOffset(...getOffsetInCanvas(e));
+  }
+
+  function onMove(e) {
     if (!state.active) return;
-    const [ox, oy] = getOffsetInCanvas(e);
-    updateFromOffset(ox, oy);
-  });
-  window.addEventListener(
-    'touchmove',
-    (e) => {
-      if (!state.active) return;
-      e.preventDefault();
-      const [ox, oy] = getOffsetInCanvas(e);
-      updateFromOffset(ox, oy);
-    },
-    { passive: false },
-  );
+    if (e.type === 'touchmove') e.preventDefault();
+    updateFromOffset(...getOffsetInCanvas(e));
+  }
+
   function release() {
     if (!state.active) return;
     state.active = false;
-    state.dx = 0;
-    state.dy = 0;
+    state.dx = state.dy = 0;
     sendVelocity(robotId, 0, 0, velLabel);
     drawJoystick();
   }
+
+  jc.addEventListener('mousedown', onStart);
+  jc.addEventListener('touchstart', onStart, { passive: false });
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('touchmove', onMove, { passive: false });
   window.addEventListener('mouseup', release);
   window.addEventListener('touchend', release);
 
@@ -161,19 +135,11 @@ function makeJoystick(robotId) {
 
 function sendVelocity(robotId, dx, dy, velLabel) {
   const maxV = CONFIG.max_wheel_speed_mmps;
-  const wb = CONFIG.wheel_base_mm;
   const vl = (dy - dx) * maxV;
   const vr = (dy + dx) * maxV;
   velLabel.textContent = `L: ${vl.toFixed(1)}  R: ${vr.toFixed(1)}`;
   if (ws.readyState === WebSocket.OPEN) {
-    ws.send(
-      JSON.stringify({
-        type: 'cmd_vel',
-        robot_id: robotId,
-        cmd_vel_left: vl,
-        cmd_vel_right: vr,
-      }),
-    );
+    ws.send(JSON.stringify({ type: 'cmd_vel', robot_id: robotId, cmd_vel_left: vl, cmd_vel_right: vr }));
   }
 }
 
@@ -182,9 +148,7 @@ function rebuildJoysticks() {
   const virtualIds = Object.keys(robots).filter((id) => robots[id].virtual);
   const existing = new Set([...container.querySelectorAll('.joystick-wrap')].map((el) => el.dataset.robotId));
   for (const id of virtualIds) {
-    if (!existing.has(id)) {
-      container.appendChild(makeJoystick(id));
-    }
+    if (!existing.has(id)) container.appendChild(makeJoystick(id));
   }
   for (const el of container.querySelectorAll('.joystick-wrap')) {
     if (!virtualIds.includes(el.dataset.robotId)) {
@@ -192,6 +156,20 @@ function rebuildJoysticks() {
       delete joystickState[el.dataset.robotId];
     }
   }
+}
+
+function drawRoundedRect(context, x, y, halfW, halfH, r) {
+  context.beginPath();
+  context.moveTo(x - halfW + r, y - halfH);
+  context.lineTo(x + halfW - r, y - halfH);
+  context.arcTo(x + halfW, y - halfH, x + halfW, y - halfH + r, r);
+  context.lineTo(x + halfW, y + halfH - r);
+  context.arcTo(x + halfW, y + halfH, x + halfW - r, y + halfH, r);
+  context.lineTo(x - halfW + r, y + halfH);
+  context.arcTo(x - halfW, y + halfH, x - halfW, y + halfH - r, r);
+  context.lineTo(x - halfW, y - halfH + r);
+  context.arcTo(x - halfW, y - halfH, x - halfW + r, y - halfH, r);
+  context.closePath();
 }
 
 function drawField() {
@@ -202,14 +180,14 @@ function drawField() {
   const fh = mmScale(CONFIG.field_width_mm);
   const r = mmScale(CONFIG.corner_radius_mm);
   const gw = mmScale(CONFIG.goal_width_mm);
-  const ox = 1 + gd;
-  const oy = 1;
+  const ox = 1 + gd,
+    oy = 1;
   const gTop = oy + (fh - gw) / 2;
 
   for (const line of CONFIG.tape_lines) {
     const [lx] = fieldToCanvas(line.x_mm, 0);
     ctx.strokeStyle = line.color;
-    ctx.lineWidth = Math.max(1, Math.round(s(CONFIG.tape_width_mm)));
+    ctx.lineWidth = Math.max(1, Math.round(mmScale(CONFIG.tape_width_mm)));
     ctx.beginPath();
     ctx.moveTo(lx, oy);
     ctx.lineTo(lx, oy + fh);
@@ -236,15 +214,12 @@ function drawField() {
 
   for (const side of [-1, 1]) {
     const wallX = side === 1 ? ox + fw : ox;
-    const wallDir = side === 1 ? 1 : -1;
-    ctx.fillStyle = '#2d6a2d';
-    ctx.fillRect(wallDir === 1 ? wallX : wallX - gd, gTop, gd, gw);
     ctx.strokeStyle = '#aaaaaa';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(wallX, gTop);
-    ctx.lineTo(wallX + wallDir * gd, gTop);
-    ctx.lineTo(wallX + wallDir * gd, gTop + gw);
+    ctx.lineTo(wallX + side * gd, gTop);
+    ctx.lineTo(wallX + side * gd, gTop + gw);
     ctx.lineTo(wallX, gTop + gw);
     ctx.stroke();
   }
@@ -254,15 +229,8 @@ function drawField() {
 
 function drawBall() {
   const [cx, cy] = fieldToCanvas(ball.world_x_mm, ball.world_y_mm);
-  const r = mmScale(CONFIG.ball_diameter_mm / 2);
   ctx.save();
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, 2 * Math.PI);
-  ctx.fillStyle = '#f0f0f0';
-  ctx.fill();
-  ctx.strokeStyle = '#333333';
-  ctx.lineWidth = 1;
-  ctx.stroke();
+  drawCircle(ctx, cx, cy, mmScale(CONFIG.ball_diameter_mm / 2), '#f0f0f0', '#333333', 1);
   ctx.restore();
 }
 
@@ -273,24 +241,13 @@ function drawRobots() {
   for (const id in robots) {
     const rob = robots[id];
     if (rob.world_x_mm == null || rob.world_y_mm == null) continue;
-    const hdg = rob.world_heading_deg ?? 0;
     const [cx, cy] = fieldToCanvas(rob.world_x_mm, rob.world_y_mm);
-    const rad = (hdg * Math.PI) / 180;
+    const rad = ((rob.world_heading_deg ?? 0) * Math.PI) / 180;
 
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(-rad);
-    ctx.beginPath();
-    ctx.moveTo(-len2 + r, -wid2);
-    ctx.lineTo(len2 - r, -wid2);
-    ctx.arcTo(len2, -wid2, len2, -wid2 + r, r);
-    ctx.lineTo(len2, wid2 - r);
-    ctx.arcTo(len2, wid2, len2 - r, wid2, r);
-    ctx.lineTo(-len2 + r, wid2);
-    ctx.arcTo(-len2, wid2, -len2, wid2 - r, r);
-    ctx.lineTo(-len2, -wid2 + r);
-    ctx.arcTo(-len2, -wid2, -len2 + r, -wid2, r);
-    ctx.closePath();
+    drawRoundedRect(ctx, 0, 0, len2, wid2, r);
     ctx.fillStyle = id.toLowerCase().includes('red')
       ? '#cc3333'
       : id.toLowerCase().includes('blue')
@@ -310,7 +267,7 @@ function drawRobots() {
     ctx.restore();
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = `${Math.max(9, Math.round(s(40)))}px monospace`;
+    ctx.font = `${Math.max(9, Math.round(mmScale(40)))}px monospace`;
     ctx.fillText(id, cx, cy);
   }
 }
@@ -323,9 +280,9 @@ function render() {
 }
 
 function updateBallInfo() {
+  const fmt = (v) => (v ?? 0).toFixed(1);
   document.getElementById('ball-info').textContent =
-    `x: ${ball.world_x_mm.toFixed(1)} mm   y: ${ball.world_y_mm.toFixed(1)} mm` +
-    `   vx: ${(ball.vel_x_mmps ?? 0).toFixed(1)} mm/s   vy: ${(ball.vel_y_mmps ?? 0).toFixed(1)} mm/s`;
+    `x: ${fmt(ball.world_x_mm)} mm   y: ${fmt(ball.world_y_mm)} mm   vx: ${fmt(ball.vel_x_mmps)} mm/s   vy: ${fmt(ball.vel_y_mmps)} mm/s`;
 }
 
 function updateTable() {
@@ -334,49 +291,50 @@ function updateTable() {
   for (const id in robots) {
     const rob = robots[id];
     const tr = document.createElement('tr');
-    for (const f of [
+    const fields = [
       id,
-      rob.world_x_mm?.toFixed(0) ?? '-',
-      rob.world_y_mm?.toFixed(0) ?? '-',
-      rob.world_heading_deg?.toFixed(1) ?? '-',
-      rob.distance_cm?.toFixed(1) ?? '-',
-      rob.reflectance_left?.toFixed(3) ?? '-',
-      rob.reflectance_right?.toFixed(3) ?? '-',
-      rob.left_encoder?.toFixed(0) ?? '-',
-      rob.right_encoder?.toFixed(0) ?? '-',
+      rob.world_x_mm?.toFixed(0),
+      rob.world_y_mm?.toFixed(0),
+      rob.world_heading_deg?.toFixed(1),
+      rob.distance_cm?.toFixed(1),
+      rob.reflectance_left?.toFixed(3),
+      rob.reflectance_right?.toFixed(3),
+      rob.left_encoder?.toFixed(0),
+      rob.right_encoder?.toFixed(0),
       rob.virtual ? 'yes' : 'no',
-    ]) {
+    ];
+    for (const f of fields) {
       const td = document.createElement('td');
-      td.textContent = f;
+      td.textContent = f ?? '-';
       tr.appendChild(td);
     }
     tbody.appendChild(tr);
   }
 }
 
+function postJson(url, data) {
+  fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+}
+
+function getInputValue(id) {
+  return parseFloat(document.getElementById(id).value);
+}
+
 function sendOverride() {
-  fetch('/pose_override', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      robot_id: document.getElementById('ov-id').value,
-      world_x_mm: parseFloat(document.getElementById('ov-x').value),
-      world_y_mm: parseFloat(document.getElementById('ov-y').value),
-      world_heading_deg: parseFloat(document.getElementById('ov-hdg').value),
-    }),
+  postJson('/pose_override', {
+    robot_id: document.getElementById('ov-id').value,
+    world_x_mm: getInputValue('ov-x'),
+    world_y_mm: getInputValue('ov-y'),
+    world_heading_deg: getInputValue('ov-hdg'),
   });
 }
 
 function sendBallState() {
-  fetch('/ball', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      world_x_mm: parseFloat(document.getElementById('ball-x').value),
-      world_y_mm: parseFloat(document.getElementById('ball-y').value),
-      vel_x_mmps: parseFloat(document.getElementById('ball-vx').value),
-      vel_y_mmps: parseFloat(document.getElementById('ball-vy').value),
-    }),
+  postJson('/ball', {
+    world_x_mm: getInputValue('ball-x'),
+    world_y_mm: getInputValue('ball-y'),
+    vel_x_mmps: getInputValue('ball-vx'),
+    vel_y_mmps: getInputValue('ball-vy'),
   });
 }
 
@@ -384,27 +342,35 @@ window.addEventListener('resize', render);
 
 ws.onmessage = (event) => {
   const msg = JSON.parse(event.data);
-  if (msg.type === 'init') {
-    robots = msg.robots;
-    ball = msg.ball ?? ball;
-    rebuildJoysticks();
-  } else if (msg.type === 'telemetry') {
-    const d = msg.data;
-    robots[d.robot_id] = { ...(robots[d.robot_id] ?? {}), ...d };
-  } else if (msg.type === 'ball') {
-    ball = msg.data;
-  } else if (msg.type === 'pose_override') {
-    const d = msg.data;
-    if (!robots[d.robot_id]) robots[d.robot_id] = { robot_id: d.robot_id, virtual: true };
-    robots[d.robot_id].world_x_mm = d.world_x_mm;
-    robots[d.robot_id].world_y_mm = d.world_y_mm;
-    robots[d.robot_id].world_heading_deg = d.world_heading_deg;
-    rebuildJoysticks();
-  } else if (msg.type === 'virtual_robots') {
-    for (const [id, data] of Object.entries(msg.data)) {
-      robots[id] = { ...(robots[id] ?? {}), ...data };
-    }
-  }
+  const handlers = {
+    init: () => {
+      robots = msg.robots;
+      ball = msg.ball ?? ball;
+      rebuildJoysticks();
+    },
+    telemetry: () => {
+      robots[msg.data.robot_id] = { ...robots[msg.data.robot_id], ...msg.data };
+    },
+    ball: () => {
+      ball = msg.data;
+    },
+    pose_override: () => {
+      const d = msg.data;
+      robots[d.robot_id] = {
+        ...robots[d.robot_id],
+        robot_id: d.robot_id,
+        virtual: true,
+        world_x_mm: d.world_x_mm,
+        world_y_mm: d.world_y_mm,
+        world_heading_deg: d.world_heading_deg,
+      };
+      rebuildJoysticks();
+    },
+    virtual_robots: () => {
+      for (const [id, data] of Object.entries(msg.data)) robots[id] = { ...robots[id], ...data };
+    },
+  };
+  handlers[msg.type]?.();
   render();
   updateBallInfo();
   updateTable();
