@@ -90,16 +90,13 @@ class RobotPose:
         dr = (right_ticks - self.prev_right_ticks) * MM_PER_TICK
         self.prev_left_ticks = left_ticks
         self.prev_right_ticks = right_ticks
-
         dist = (dl + dr) / 2.0
         d_heading_rad = (dr - dl) / WHEEL_BASE_MM
-
         heading_rad = math.radians(self.heading_deg)
         mid_heading = heading_rad + d_heading_rad / 2.0
         self.x_mm += dist * math.cos(mid_heading)
         self.y_mm += dist * math.sin(mid_heading)
         self.heading_deg = math.degrees(heading_rad + d_heading_rad) % 360
-
         self.accuracy = max(0.0, self.accuracy - abs(dist) * 0.0001)
 
     def correct_pose(self, x_mm: float, y_mm: float, heading_deg: float, accuracy: float = 1.0):
@@ -131,13 +128,10 @@ def closest_point_on_rounded_rect(px, py, cx, cy, half_len, half_wid, corner_r, 
     sin_h = math.sin(-heading_rad)
     lx = (px - cx) * cos_h - (py - cy) * sin_h
     ly = (px - cx) * sin_h + (py - cy) * cos_h
-
     inner_half_len = half_len - corner_r
     inner_half_wid = half_wid - corner_r
-
     clamped_x = max(-inner_half_len, min(inner_half_len, lx))
     clamped_y = max(-inner_half_wid, min(inner_half_wid, ly))
-
     cos_fwd = math.cos(heading_rad)
     sin_fwd = math.sin(heading_rad)
     wx = cx + clamped_x * cos_fwd - clamped_y * sin_fwd
@@ -164,12 +158,9 @@ def field_boundary_response(bx, by, vx, vy, radius):  # noqa
     half_wid = FIELD_WIDTH_MM / 2
     goal_half = GOAL_WIDTH_MM / 2
     goal_depth = GOAL_DEPTH_MM
-
     in_left_goal = bx < -half_len and abs(by) < goal_half
     in_right_goal = bx > half_len and abs(by) < goal_half
-
     new_bx, new_by, new_vx, new_vy = bx, by, vx, vy
-
     if in_left_goal:
         left_wall = -half_len - goal_depth
         top_wall = -goal_half
@@ -184,7 +175,6 @@ def field_boundary_response(bx, by, vx, vy, radius):  # noqa
             new_by = bot_wall - radius
             new_vy = -abs(new_vy) * RESTITUTION
         return new_bx, new_by, new_vx, new_vy
-
     if in_right_goal:
         right_wall = half_len + goal_depth
         top_wall = -goal_half
@@ -199,28 +189,23 @@ def field_boundary_response(bx, by, vx, vy, radius):  # noqa
             new_by = bot_wall - radius
             new_vy = -abs(new_vy) * RESTITUTION
         return new_bx, new_by, new_vx, new_vy
-
     corner_r = CORNER_RADIUS_MM
     inner_half_len = half_len - corner_r
     inner_half_wid = half_wid - corner_r
-
     if new_by - radius < -half_wid:
         new_by = -half_wid + radius
         new_vy = abs(new_vy) * RESTITUTION
     if new_by + radius > half_wid:
         new_by = half_wid - radius
         new_vy = -abs(new_vy) * RESTITUTION
-
     entering_left_goal = new_bx - radius < -half_len and abs(new_by) < goal_half
     entering_right_goal = new_bx + radius > half_len and abs(new_by) < goal_half
-
     if not entering_left_goal and new_bx - radius < -half_len:
         new_bx = -half_len + radius
         new_vx = abs(new_vx) * RESTITUTION
     if not entering_right_goal and new_bx + radius > half_len:
         new_bx = half_len - radius
         new_vx = -abs(new_vx) * RESTITUTION
-
     corner_centers = [
         (-inner_half_len, -inner_half_wid),
         (inner_half_len, -inner_half_wid),
@@ -245,7 +230,6 @@ def field_boundary_response(bx, by, vx, vy, radius):  # noqa
             if dot < 0:
                 new_vx -= (1 + RESTITUTION) * dot * nx
                 new_vy -= (1 + RESTITUTION) * dot * ny
-
     return new_bx, new_by, new_vx, new_vy
 
 
@@ -254,34 +238,28 @@ def collide_ball_with_robot(bx, by, vx, vy, robot):
     ry = robot.get('world_y_mm')
     if rx is None or ry is None:
         return bx, by, vx, vy
-
     heading_rad = math.radians(robot.get('world_heading_deg', 0))
     half_len = ROBOT_LENGTH_MM / 2
     half_wid = ROBOT_WIDTH_MM / 2
     corner_r = ROBOT_CORNER_RADIUS_MM
-
     cpx, cpy = closest_point_on_rounded_rect(
         bx, by, rx, ry, half_len, half_wid, corner_r, heading_rad)
     dx = bx - cpx
     dy = by - cpy
     dist = math.sqrt(dx * dx + dy * dy)
-
     if dist == 0 or dist >= BALL_RADIUS_MM:
         return bx, by, vx, vy
-
     nx = dx / dist
     ny = dy / dist
     penetration = BALL_RADIUS_MM - dist
     new_bx = bx + nx * penetration
     new_by = by + ny * penetration
-
     dot = vx * nx + vy * ny
     if dot < 0:
         new_vx = vx - (1 + RESTITUTION) * dot * nx
         new_vy = vy - (1 + RESTITUTION) * dot * ny
     else:
         new_vx, new_vy = vx, vy
-
     return new_bx, new_by, new_vx, new_vy
 
 
@@ -332,25 +310,20 @@ async def simulation_loop():
         vy = ball_state['vel_y_mmps']
         bx = ball_state['world_x_mm']
         by = ball_state['world_y_mm']
-
         if abs(vx) < 0.5 and abs(vy) < 0.5:
             ball_state['vel_x_mmps'] = 0.0
             ball_state['vel_y_mmps'] = 0.0
         else:
             bx += vx * dt
             by += vy * dt
-
             for robot in robots.values():
                 bx, by, vx, vy = collide_ball_with_robot(bx, by, vx, vy, robot)
-
             bx, by, vx, vy = field_boundary_response(bx, by, vx, vy, BALL_RADIUS_MM)
             vx, vy = apply_friction(vx, vy, dt)
-
             ball_state['world_x_mm'] = bx
             ball_state['world_y_mm'] = by
             ball_state['vel_x_mmps'] = vx
             ball_state['vel_y_mmps'] = vy
-
         virtual_updates = {
             rid: {k: v for k, v in rob.items()}
             for rid, rob in robots.items()
@@ -499,10 +472,8 @@ async def broadcast(message: dict):
 
 
 def build_html(config: dict) -> str:
-    config_json = json.dumps(config)
     html = open(os.path.join(os.path.dirname(__file__), 'render.html')).read()
-    html = html.replace('CONFIG_JSON', config_json)
-    return html
+    return html.replace('CONFIG_JSON', json.dumps(config))
 
 
 @app.get('/', response_class=HTMLResponse)
