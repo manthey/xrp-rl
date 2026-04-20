@@ -22,15 +22,22 @@ FIELD_WIDTH_MM = 1500
 GOAL_WIDTH_MM = 500
 GOAL_DEPTH_MM = 120
 CORNER_RADIUS_MM = 250
-ROBOT_LENGTH_MM = 200
+ROBOT_LENGTH_MM = 160
 ROBOT_WIDTH_MM = 180
 ROBOT_CORNER_RADIUS_MM = 20
 BALL_DIAMETER_MM = 60
 BALL_RADIUS_MM = BALL_DIAMETER_MM / 2
 TAPE_WIDTH_MM = 25
 
-FRICTION_PER_SEC = 8.0
-RESTITUTION = 1.0
+WHEEL_DIAMETER_MM = 60.0
+WHEEL_RADIUS_MM = WHEEL_DIAMETER_MM / 2
+WHEEL_BASE_MM = 155.0
+TICKS_PER_REV = 585
+MM_PER_TICK = math.pi * WHEEL_DIAMETER_MM / TICKS_PER_REV
+MAX_WHEEL_SPEED_MMPS = 150.0
+
+FRICTION_PER_SEC = 80.0
+RESTITUTION = 0.9
 SIM_HZ = 60
 
 TAPE_LINES = [
@@ -55,7 +62,57 @@ FIELD_CONFIG = {
     "tape_lines":             TAPE_LINES,
     "friction_per_sec":       FRICTION_PER_SEC,
     "restitution":            RESTITUTION,
+    "wheel_base_mm":          WHEEL_BASE_MM,
+    "max_wheel_speed_mmps":   MAX_WHEEL_SPEED_MMPS,
 }
+
+
+class RobotPose:
+    """
+    Dead-reckoning pose tracker using differential drive kinematics.
+    Suitable for use on the XRP (MicroPython) or in simulation.
+    Call update_from_encoders each control cycle with current raw tick counts.
+    Call correct_pose when a ground-truth position is known (tape line, wall).
+    """
+
+    def __init__(self, x_mm: float = 0.0, y_mm: float = 0.0, heading_deg: float = 0.0):
+        self.x_mm = x_mm
+        self.y_mm = y_mm
+        self.heading_deg = heading_deg
+        self.prev_left_ticks = 0
+        self.prev_right_ticks = 0
+        self.accuracy = 1.0
+
+    def update_from_encoders(self, left_ticks: int, right_ticks: int):
+        dl = (left_ticks  - self.prev_left_ticks)  * MM_PER_TICK
+        dr = (right_ticks - self.prev_right_ticks) * MM_PER_TICK
+        self.prev_left_ticks  = left_ticks
+        self.prev_right_ticks = right_ticks
+
+        dist = (dl + dr) / 2.0
+        d_heading_rad = (dr - dl) / WHEEL_BASE_MM
+
+        heading_rad = math.radians(self.heading_deg)
+        mid_heading = heading_rad + d_heading_rad / 2.0
+        self.x_mm += dist * math.cos(mid_heading)
+        self.y_mm += dist * math.sin(mid_heading)
+        self.heading_deg = math.degrees(heading_rad + d_heading_rad) % 360
+
+        self.accuracy = max(0.0, self.accuracy - abs(dist) * 0.0001)
+
+    def correct_pose(self, x_mm: float, y_mm: float, heading_deg: float, accuracy: float = 1.0):
+        self.x_mm = x_mm
+        self.y_mm = y_mm
+        self.heading_deg = heading_deg
+        self.accuracy = accuracy
+
+    def partial_correct_x(self, x_mm: float):
+        self.x_mm = x_mm
+        self.accuracy = min(1.0, self.accuracy + 0.3)
+
+    def partial_correct_y(self, y_mm: float):
+        self.y_mm = y_mm
+        self.accuracy = min(1.0, self.accuracy + 0.3)
 
 
 def closest_point_on_segment(px, py, ax, ay, bx, by):
@@ -235,6 +292,26 @@ def apply_friction(vx, vy, dt):
     return vx * factor, vy * factor
 
 
+def step_virtual_robot(robot: dict, dt: float):
+    vl = robot.get("cmd_vel_left", 0.0)
+    vr = robot.get("cmd_vel_right", 0.0)
+    if vl == 0.0 and vr == 0.0:
+        return
+
+    heading_rad = math.radians(robot.get("world_heading_deg", 0.0))
+    dist = (vl + vr) / 2.0 * dt
+    d_heading = (vr - vl) / WHEEL_BASE_MM * dt
+
+    mid_heading = heading_rad + d_heading / 2.0
+    robot["world_x_mm"] = robot.get("world_x_mm", 0.0) + dist * math.cos(mid_heading)
+    robot["world_y_mm"] = robot.get("world_y_mm", 0.0) + dist * math.sin(mid_heading)
+    robot["world_heading_deg"] = math.degrees(heading_rad + d_heading) % 360
+
+    ticks_per_sec = MAX_WHEEL_SPEED_MMPS / MM_PER_TICK
+    robot["left_encoder"]  = robot.get("left_encoder",  0.0) + vl * dt / MM_PER_TICK
+    robot["right_encoder"] = robot.get("right_encoder", 0.0) + vr * dt / MM_PER_TICK
+
+
 ball_state: dict = {
     "world_x_mm": 0.0,
     "world_y_mm": 0.0,
@@ -250,6 +327,10 @@ async def simulation_loop():
     while True:
         await asyncio.sleep(dt)
 
+        for robot in robots.values():
+            if robot.get("virtual"):
+                step_virtual_robot(robot, dt)
+
         vx = ball_state["vel_x_mmps"]
         vy = ball_state["vel_y_mmps"]
         bx = ball_state["world_x_mm"]
@@ -258,22 +339,28 @@ async def simulation_loop():
         if abs(vx) < 0.5 and abs(vy) < 0.5:
             ball_state["vel_x_mmps"] = 0.0
             ball_state["vel_y_mmps"] = 0.0
-            continue
+        else:
+            bx += vx * dt
+            by += vy * dt
 
-        bx += vx * dt
-        by += vy * dt
+            for robot in robots.values():
+                bx, by, vx, vy = collide_ball_with_robot(bx, by, vx, vy, robot)
 
-        for robot in robots.values():
-            bx, by, vx, vy = collide_ball_with_robot(bx, by, vx, vy, robot)
+            bx, by, vx, vy = field_boundary_response(bx, by, vx, vy, BALL_RADIUS_MM)
+            vx, vy = apply_friction(vx, vy, dt)
 
-        bx, by, vx, vy = field_boundary_response(bx, by, vx, vy, BALL_RADIUS_MM)
-        vx, vy = apply_friction(vx, vy, dt)
+            ball_state["world_x_mm"] = bx
+            ball_state["world_y_mm"] = by
+            ball_state["vel_x_mmps"] = vx
+            ball_state["vel_y_mmps"] = vy
 
-        ball_state["world_x_mm"] = bx
-        ball_state["world_y_mm"] = by
-        ball_state["vel_x_mmps"] = vx
-        ball_state["vel_y_mmps"] = vy
-
+        virtual_updates = {
+            rid: {k: v for k, v in rob.items()}
+            for rid, rob in robots.items()
+            if rob.get("virtual")
+        }
+        if virtual_updates:
+            await broadcast({"type": "virtual_robots", "data": virtual_updates})
         await broadcast({"type": "ball", "data": dict(ball_state)})
 
 
@@ -320,6 +407,12 @@ class PoseOverride(BaseModel):
     world_heading_deg: float
 
 
+class RobotCommand(BaseModel):
+    robot_id: str
+    cmd_vel_left: float
+    cmd_vel_right: float
+
+
 @app.post("/telemetry")
 async def receive_telemetry(telemetry: Telemetry):
     data = telemetry.model_dump()
@@ -341,11 +434,30 @@ async def update_ball(state: BallState):
 async def override_pose(override: PoseOverride):
     robot_id = override.robot_id
     if robot_id not in robots:
-        robots[robot_id] = {"robot_id": robot_id}
+        robots[robot_id] = {
+            "robot_id":        robot_id,
+            "virtual":         True,
+            "cmd_vel_left":    0.0,
+            "cmd_vel_right":   0.0,
+            "left_encoder":    0.0,
+            "right_encoder":   0.0,
+            "distance_cm":     0.0,
+            "reflectance_left":  1.0,
+            "reflectance_right": 1.0,
+        }
     robots[robot_id]["world_x_mm"]        = override.world_x_mm
     robots[robot_id]["world_y_mm"]        = override.world_y_mm
     robots[robot_id]["world_heading_deg"] = override.world_heading_deg
     await broadcast({"type": "pose_override", "data": override.model_dump()})
+    return {"status": "ok"}
+
+
+@app.post("/cmd_vel")
+async def command_velocity(cmd: RobotCommand):
+    robot_id = cmd.robot_id
+    if robot_id in robots and robots[robot_id].get("virtual"):
+        robots[robot_id]["cmd_vel_left"]  = max(-MAX_WHEEL_SPEED_MMPS, min(MAX_WHEEL_SPEED_MMPS, cmd.cmd_vel_left))
+        robots[robot_id]["cmd_vel_right"] = max(-MAX_WHEEL_SPEED_MMPS, min(MAX_WHEEL_SPEED_MMPS, cmd.cmd_vel_right))
     return {"status": "ok"}
 
 
@@ -361,7 +473,15 @@ async def websocket_endpoint(ws: WebSocket):
     try:
         await ws.send_json({"type": "init", "robots": robots, "ball": ball_state})
         while True:
-            await ws.receive_text()
+            raw = await ws.receive_text()
+            msg = json.loads(raw)
+            if msg.get("type") == "cmd_vel":
+                robot_id = msg.get("robot_id")
+                if robot_id in robots and robots[robot_id].get("virtual"):
+                    vl = max(-MAX_WHEEL_SPEED_MMPS, min(MAX_WHEEL_SPEED_MMPS, float(msg.get("cmd_vel_left", 0))))
+                    vr = max(-MAX_WHEEL_SPEED_MMPS, min(MAX_WHEEL_SPEED_MMPS, float(msg.get("cmd_vel_right", 0))))
+                    robots[robot_id]["cmd_vel_left"]  = vl
+                    robots[robot_id]["cmd_vel_right"] = vr
     except WebSocketDisconnect:
         websocket_clients.remove(ws)
 
@@ -406,6 +526,10 @@ def build_html(config: dict) -> str:
   button { background: #555; color: #e0e0e0; border: 1px solid #888; cursor: pointer; padding: 2px 8px; }
   button:hover { background: #777; }
   #ball-info { font-size: 12px; margin: 4px 0; }
+  #joysticks { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 8px; }
+  .joystick-wrap { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .joystick-label { font-size: 11px; }
+  .joystick-canvas { touch-action: none; cursor: grab; border: 1px solid #555; border-radius: 4px; background: #222; display: block; }
 </style>
 </head>
 <body>
@@ -420,11 +544,11 @@ def build_html(config: dict) -> str:
     <thead><tr>
       <th>ID</th><th>X mm</th><th>Y mm</th><th>Hdg</th>
       <th>Dist cm</th><th>Refl L</th><th>Refl R</th>
-      <th>Enc L</th><th>Enc R</th>
+      <th>Enc L</th><th>Enc R</th><th>Virt</th>
     </tr></thead>
     <tbody id="robot-tbody"></tbody>
   </table>
-  <div class="section-title">Pose Override</div>
+  <div class="section-title">Pose Override / Create Virtual Robot</div>
   <div>
     Robot ID: <input id="ov-id" type="text" style="width:80px">
     X mm: <input id="ov-x" type="number" value="0">
@@ -440,6 +564,8 @@ def build_html(config: dict) -> str:
     Vel Y mm/s: <input id="ball-vy" type="number" value="0">
     <button onclick="sendBallState()">Set</button>
   </div>
+  <div class="section-title">Virtual Robot Controls</div>
+  <div id="joysticks"></div>
 </div>
 <script>
 const C = """ + config_json + r""";
@@ -468,6 +594,156 @@ function fieldToCanvas(x, y) {
 
 let robots = {};
 let ball = {world_x_mm: 0, world_y_mm: 0, vel_x_mmps: 0, vel_y_mmps: 0};
+
+const ws = new WebSocket(`ws://${location.host}/ws`);
+
+const joystickState = {};
+
+function makeJoystick(robotId) {
+  const size = 120;
+  const knobR = 18;
+  const wrap = document.createElement('div');
+  wrap.className = 'joystick-wrap';
+  wrap.dataset.robotId = robotId;
+
+  const label = document.createElement('div');
+  label.className = 'joystick-label';
+  label.textContent = robotId;
+  wrap.appendChild(label);
+
+  const jc = document.createElement('canvas');
+  jc.className = 'joystick-canvas';
+  jc.width = size;
+  jc.height = size;
+  wrap.appendChild(jc);
+
+  const velLabel = document.createElement('div');
+  velLabel.className = 'joystick-label';
+  velLabel.textContent = 'L: 0  R: 0';
+  wrap.appendChild(velLabel);
+
+  const state = { dx: 0, dy: 0, active: false };
+  joystickState[robotId] = { state, velLabel, jc, size, knobR };
+
+  function drawJoystick() {
+    const jctx = jc.getContext('2d');
+    const cx = size / 2, cy = size / 2;
+    const maxR = size / 2 - knobR - 4;
+    jctx.clearRect(0, 0, size, size);
+    jctx.beginPath();
+    jctx.arc(cx, cy, size / 2 - 2, 0, 2 * Math.PI);
+    jctx.fillStyle = '#2a2a2a';
+    jctx.fill();
+    jctx.strokeStyle = '#555';
+    jctx.lineWidth = 1;
+    jctx.stroke();
+    jctx.beginPath();
+    jctx.moveTo(cx, cy - maxR);
+    jctx.lineTo(cx, cy + maxR);
+    jctx.moveTo(cx - maxR, cy);
+    jctx.lineTo(cx + maxR, cy);
+    jctx.strokeStyle = '#444';
+    jctx.lineWidth = 1;
+    jctx.stroke();
+    const kx = cx + state.dx * maxR;
+    const ky = cy - state.dy * maxR;
+    jctx.beginPath();
+    jctx.arc(kx, ky, knobR, 0, 2 * Math.PI);
+    jctx.fillStyle = '#888';
+    jctx.fill();
+    jctx.strokeStyle = '#bbb';
+    jctx.lineWidth = 1.5;
+    jctx.stroke();
+  }
+
+  function getOffsetInCanvas(e) {
+    const rect = jc.getBoundingClientRect();
+    const cx = e.clientX ?? e.touches[0].clientX;
+    const cy = e.clientY ?? e.touches[0].clientY;
+    return [cx - rect.left, cy - rect.top];
+  }
+
+  function updateFromOffset(ox, oy) {
+    const cx = size / 2, cy = size / 2;
+    let dx = (ox - cx) / (size / 2 - knobR - 4);
+    let dy = -(oy - cy) / (size / 2 - knobR - 4);
+    const mag = Math.sqrt(dx * dx + dy * dy);
+    if (mag > 1) { dx /= mag; dy /= mag; }
+    state.dx = dx;
+    state.dy = dy;
+    sendVelocity(robotId, dx, dy, velLabel);
+    drawJoystick();
+  }
+
+  jc.addEventListener('mousedown', e => {
+    state.active = true;
+    const [ox, oy] = getOffsetInCanvas(e);
+    updateFromOffset(ox, oy);
+  });
+  jc.addEventListener('touchstart', e => {
+    e.preventDefault();
+    state.active = true;
+    const [ox, oy] = getOffsetInCanvas(e);
+    updateFromOffset(ox, oy);
+  }, { passive: false });
+  window.addEventListener('mousemove', e => {
+    if (!state.active) return;
+    const [ox, oy] = getOffsetInCanvas(e);
+    updateFromOffset(ox, oy);
+  });
+  window.addEventListener('touchmove', e => {
+    if (!state.active) return;
+    e.preventDefault();
+    const [ox, oy] = getOffsetInCanvas(e);
+    updateFromOffset(ox, oy);
+  }, { passive: false });
+  function release() {
+    if (!state.active) return;
+    state.active = false;
+    state.dx = 0;
+    state.dy = 0;
+    sendVelocity(robotId, 0, 0, velLabel);
+    drawJoystick();
+  }
+  window.addEventListener('mouseup', release);
+  window.addEventListener('touchend', release);
+
+  drawJoystick();
+  return wrap;
+}
+
+function sendVelocity(robotId, dx, dy, velLabel) {
+  const maxV = C.max_wheel_speed_mmps;
+  const wb   = C.wheel_base_mm;
+  const vl = (dy - dx) * maxV;
+  const vr = (dy + dx) * maxV;
+  velLabel.textContent = `L: ${vl.toFixed(1)}  R: ${vr.toFixed(1)}`;
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      type: 'cmd_vel',
+      robot_id: robotId,
+      cmd_vel_left:  vl,
+      cmd_vel_right: vr,
+    }));
+  }
+}
+
+function rebuildJoysticks() {
+  const container = document.getElementById('joysticks');
+  const virtualIds = Object.keys(robots).filter(id => robots[id].virtual);
+  const existing = new Set([...container.querySelectorAll('.joystick-wrap')].map(el => el.dataset.robotId));
+  for (const id of virtualIds) {
+    if (!existing.has(id)) {
+      container.appendChild(makeJoystick(id));
+    }
+  }
+  for (const el of container.querySelectorAll('.joystick-wrap')) {
+    if (!virtualIds.includes(el.dataset.robotId)) {
+      el.remove();
+      delete joystickState[el.dataset.robotId];
+    }
+  }
+}
 
 function drawField() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -569,8 +845,8 @@ function drawRobots() {
     ctx.fillStyle = id.toLowerCase().includes('red')  ? '#cc3333' :
                     id.toLowerCase().includes('blue') ? '#3366cc' : '#888888';
     ctx.fill();
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = rob.virtual ? '#ffff00' : '#ffffff';
+    ctx.lineWidth = rob.virtual ? 2 : 1;
     ctx.stroke();
     ctx.beginPath();
     ctx.moveTo(len2, 0);
@@ -616,6 +892,7 @@ function updateTable() {
       rob.reflectance_right?.toFixed(3) ?? '-',
       rob.left_encoder?.toFixed(0)      ?? '-',
       rob.right_encoder?.toFixed(0)     ?? '-',
+      rob.virtual ? 'yes' : 'no',
     ]) {
       const td = document.createElement('td');
       td.textContent = f;
@@ -653,12 +930,12 @@ function sendBallState() {
 
 window.addEventListener('resize', render);
 
-const ws = new WebSocket(`ws://${location.host}/ws`);
 ws.onmessage = (event) => {
   const msg = JSON.parse(event.data);
   if (msg.type === 'init') {
     robots = msg.robots;
     ball   = msg.ball ?? ball;
+    rebuildJoysticks();
   } else if (msg.type === 'telemetry') {
     const d = msg.data;
     robots[d.robot_id] = {...(robots[d.robot_id] ?? {}), ...d};
@@ -666,10 +943,14 @@ ws.onmessage = (event) => {
     ball = msg.data;
   } else if (msg.type === 'pose_override') {
     const d = msg.data;
-    if (robots[d.robot_id]) {
-      robots[d.robot_id].world_x_mm        = d.world_x_mm;
-      robots[d.robot_id].world_y_mm        = d.world_y_mm;
-      robots[d.robot_id].world_heading_deg = d.world_heading_deg;
+    if (!robots[d.robot_id]) robots[d.robot_id] = {robot_id: d.robot_id, virtual: true};
+    robots[d.robot_id].world_x_mm        = d.world_x_mm;
+    robots[d.robot_id].world_y_mm        = d.world_y_mm;
+    robots[d.robot_id].world_heading_deg = d.world_heading_deg;
+    rebuildJoysticks();
+  } else if (msg.type === 'virtual_robots') {
+    for (const [id, data] of Object.entries(msg.data)) {
+      robots[id] = {...(robots[id] ?? {}), ...data};
     }
   }
   render();
