@@ -24,7 +24,9 @@ FIELD_WIDTH_MM = 1500
 GOAL_WIDTH_MM = 500
 GOAL_DEPTH_MM = 120
 CORNER_RADIUS_MM = 250
-ROBOT_SIZE_MM = 200
+ROBOT_LENGTH_MM = 220
+ROBOT_WIDTH_MM = 200
+ROBOT_CORNER_RADIUS_MM = 20
 BALL_DIAMETER_MM = 100
 TAPE_WIDTH_MM = 25
 
@@ -42,7 +44,9 @@ FIELD_CONFIG = {
     "goal_width_mm":   GOAL_WIDTH_MM,
     "goal_depth_mm":   GOAL_DEPTH_MM,
     "corner_radius_mm": CORNER_RADIUS_MM,
-    "robot_size_mm":   ROBOT_SIZE_MM,
+    "robot_length_mm":        ROBOT_LENGTH_MM,
+    "robot_width_mm":         ROBOT_WIDTH_MM,
+    "robot_corner_radius_mm": ROBOT_CORNER_RADIUS_MM,
     "ball_diameter_mm": BALL_DIAMETER_MM,
     "tape_width_mm":   TAPE_WIDTH_MM,
     "tape_lines":      TAPE_LINES,
@@ -314,7 +318,9 @@ function drawBall() {
 }
 
 function drawRobots() {
-  const rs = s(C.robot_size_mm / 2);
+  const len2 = s(C.robot_length_mm / 2);
+  const wid2 = s(C.robot_width_mm / 2);
+  const r = s(C.robot_corner_radius_mm);
   for (const id in robots) {
     const rob = robots[id];
     const x   = rob.world_x_mm ?? null;
@@ -327,19 +333,35 @@ function drawRobots() {
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(-rad);
+    ctx.beginPath();
+    ctx.moveTo(-len2 + r, -wid2);
+    ctx.lineTo(len2 - r, -wid2);
+    ctx.arcTo(len2, -wid2, len2, -wid2 + r, r);
+    ctx.lineTo(len2, wid2 - r);
+    ctx.arcTo(len2, wid2, len2 - r, wid2, r);
+    ctx.lineTo(-len2 + r, wid2);
+    ctx.arcTo(-len2, wid2, -len2, wid2 - r, r);
+    ctx.lineTo(-len2, -wid2 + r);
+    ctx.arcTo(-len2, -wid2, -len2 + r, -wid2, r);
+    ctx.closePath();
     ctx.fillStyle = id.toLowerCase().includes('red')  ? '#cc3333' :
                     id.toLowerCase().includes('blue') ? '#3366cc' : '#888888';
-    ctx.fillRect(-rs, -rs, rs * 2, rs * 2);
+    ctx.fill()
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1;
-    ctx.strokeRect(-rs, -rs, rs * 2, rs * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(len2, 0);
+    ctx.lineTo(len2 * 0.6, -wid2 * 0.5);
+    ctx.lineTo(len2 * 0.6, wid2 * 0.5);
+    ctx.closePath();
     ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, -rs, rs, rs * 0.3);
+    ctx.fill();
     ctx.restore();
 
     ctx.fillStyle = '#ffffff';
     ctx.font = `${Math.max(9, Math.round(s(40)))}px monospace`;
-    ctx.fillText(id, cx + rs + 2, cy);
+    ctx.fillText(id, cx + len2 + 4, cy);
   }
 }
 
