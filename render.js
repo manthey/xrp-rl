@@ -252,7 +252,7 @@ function drawRobots() {
     ctx.fillStyle = id.toLowerCase().includes('red')
       ? '#cc3333'
       : id.toLowerCase().includes('blue')
-        ? '#3366cc'
+        ? '#3333cc'
         : '#888888';
     ctx.fill();
     ctx.strokeStyle = rob.virtual ? '#ffff00' : '#ffffff';
@@ -268,7 +268,9 @@ function drawRobots() {
     ctx.restore();
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = `${Math.max(9, Math.round(mmScale(40)))}px monospace`;
+    ctx.font = `${Math.max(9, Math.round(mmScale(36)))}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
     ctx.fillText(id, cx, cy);
   }
 }
