@@ -139,7 +139,8 @@ function sendVelocity(robotId, dx, dy, velLabel) {
   const vr = (dy + dx) * maxV;
   velLabel.textContent = `L: ${vl.toFixed(1)}  R: ${vr.toFixed(1)}`;
   if (ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: 'cmd_vel', robot_id: robotId, cmd_vel_left: vl, cmd_vel_right: vr }));
+    // ws.send(JSON.stringify({ type: 'cmd_vel', robot_id: robotId, cmd_vel_left: vl, cmd_vel_right: vr }));
+    ws.send(JSON.stringify({ type: 'arcade', robot_id: robotId, straight: dy, turn: dx }));
   }
 }
 

@@ -1,8 +1,9 @@
+#!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.11"
 # dependencies = [
 #   "fastapi",
-#   "uvicorn",
+#   "uvicorn[standard]",
 #   "pydantic",
 # ]
 # ///
@@ -26,23 +27,23 @@ GOAL_WIDTH_MM = 500
 GOAL_DEPTH_MM = 120
 CORNER_RADIUS_MM = 250
 ROBOT_LENGTH_MM = 160
-ROBOT_WIDTH_MM = 180
+ROBOT_WIDTH_MM = 190
 ROBOT_CORNER_RADIUS_MM = 20
 ROBOT_DISTANCE_SENSOR_OFFSET = 70
 ROBOT_REFLECTANCE_SENSOR_OFFSET = 60
 ROBOT_REFLECTANCE_SENSOR_SIDE = 20
-BALL_DIAMETER_MM = 60
+BALL_DIAMETER_MM = 2.25 * 25.4  # 60
 BALL_RADIUS_MM = BALL_DIAMETER_MM / 2
 TAPE_WIDTH_MM = 25
 
-WHEEL_DIAMETER_MM = 60.0
-WHEEL_BASE_MM = 155.0
+WHEEL_DIAMETER_MM = 60
+WHEEL_BASE_MM = 155
 TICKS_PER_REV = 585
 MM_PER_TICK = math.pi * WHEEL_DIAMETER_MM / TICKS_PER_REV
 MAX_WHEEL_SPEED_MMPS = 250.0
 
 FRICTION_PER_SEC = 40.0
-RESTITUTION = 0.9
+RESTITUTION = 0.8
 SIM_HZ = 60
 
 TAPE_LINES = [
@@ -675,8 +676,8 @@ class PoseOverride(BaseModel):
 
 class RobotCommand(BaseModel):
     robot_id: str
-    cmd_vel_left: float
-    cmd_vel_right: float
+    straight: float
+    turn: float
 
 
 @app.post('/telemetry')
@@ -720,12 +721,15 @@ async def override_pose(override: PoseOverride):
     return {'status': 'ok'}
 
 
-@app.post('/cmd_vel')
-async def command_velocity(cmd: RobotCommand):
+@app.post('/arcade')
+async def arcade(cmd: RobotCommand):
+    print(cmd)
     robot_id = cmd.robot_id
     if robot_id in robots and robots[robot_id].get('virtual'):
-        robots[robot_id]['cmd_vel_left'] = clamp_speed(cmd.cmd_vel_left)
-        robots[robot_id]['cmd_vel_right'] = clamp_speed(cmd.cmd_vel_right)
+        vl = (cmd.straight - cmd.turn) * MAX_WHEEL_SPEED_MMPS
+        vr = (cmd.straight + cmd.turn) * MAX_WHEEL_SPEED_MMPS
+        robots[robot_id]['cmd_vel_left'] = clamp_speed(vl)
+        robots[robot_id]['cmd_vel_right'] = clamp_speed(vr)
     return {'status': 'ok'}
 
 
@@ -747,13 +751,13 @@ async def websocket_endpoint(ws: WebSocket):
         await ws.send_json({'type': 'init', 'robots': robots, 'ball': ball_state})
         while True:
             msg = json.loads(await ws.receive_text())
-            if msg.get('type') == 'cmd_vel':
+            if msg.get('type') == 'arcade':
                 robot_id = msg.get('robot_id')
                 if robot_id in robots and robots[robot_id].get('virtual'):
-                    robots[robot_id]['cmd_vel_left'] = clamp_speed(
-                        float(msg.get('cmd_vel_left', 0)))
-                    robots[robot_id]['cmd_vel_right'] = clamp_speed(
-                        float(msg.get('cmd_vel_right', 0)))
+                    vl = (msg.get('straight', 0) - msg.get('turn', 0)) * MAX_WHEEL_SPEED_MMPS
+                    vr = (msg.get('straight', 0) + msg.get('turn', 0)) * MAX_WHEEL_SPEED_MMPS
+                    robots[robot_id]['cmd_vel_left'] = clamp_speed(vl)
+                    robots[robot_id]['cmd_vel_right'] = clamp_speed(vr)
     except WebSocketDisconnect:
         websocket_clients.remove(ws)
 
