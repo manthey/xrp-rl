@@ -261,11 +261,7 @@ function drawRobots() {
     ctx.translate(cx, cy);
     ctx.rotate(-rad);
     drawRoundedRect(ctx, 0, 0, len2, wid2, r);
-    ctx.fillStyle = id.toLowerCase().includes('red')
-      ? '#cc3333'
-      : id.toLowerCase().includes('blue')
-        ? '#3333cc'
-        : '#888888';
+    ctx.fillStyle = rob.team === 'blue' ? '#3333cc' : '#cc3333';
     ctx.fill();
     ctx.strokeStyle = rob.virtual ? '#ffff00' : '#ffffff';
     ctx.lineWidth = rob.virtual ? 2 : 1;
@@ -316,6 +312,7 @@ function updateTable() {
       rob.reflectance_right?.toFixed(3),
       rob.left_encoder?.toFixed(0),
       rob.right_encoder?.toFixed(0),
+      rob.team || 'red',
       rob.virtual ? 'yes' : 'no',
     ];
     for (const f of fields) {
@@ -341,6 +338,13 @@ function sendOverride() {
     world_x_mm: getInputValue('ov-x'),
     world_y_mm: getInputValue('ov-y'),
     world_heading_deg: getInputValue('ov-hdg'),
+  });
+}
+
+function sendTeam() {
+  postJson('/team', {
+    robot_id: document.getElementById('ov-id').value,
+    team: document.getElementById('ov-team').value,
   });
 }
 

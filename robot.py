@@ -16,6 +16,7 @@ if is_simulation:  # noqa
     parser = argparse.ArgumentParser()
     parser.add_argument('--simulator', default='http://127.0.0.1:8080')
     parser.add_argument('--robot-id', default='RBV-XRP2')
+    parser.add_argument('--team', default='red', choices=['red', 'blue'])
     args = parser.parse_args()
 
     class MockPin:
@@ -38,11 +39,13 @@ if is_simulation:  # noqa
             self.distance_cm = 65535.0
             self.reflectance_left = 1.0
             self.reflectance_right = 1.0
+            self.team = args.team
 
             initialization_request = urllib.request.Request(
-                f"{self.url}/pose_override",
+                f'{self.url}/pose_override',
                 data=json.dumps({
                     'robot_id': self.robot_id,
+                    'team': self.team,
                     'world_x_mm': 0.0,
                     'world_y_mm': 0.0,
                     'world_heading_deg': 0.0
@@ -53,7 +56,7 @@ if is_simulation:  # noqa
 
         def update_state(self):
             try:
-                response = urllib.request.urlopen(f"{self.url}/robot?robot_id={self.robot_id}")
+                response = urllib.request.urlopen(f'{self.url}/robot?robot_id={self.robot_id}')
                 data = json.loads(response.read().decode('utf-8'))
                 self.left_encoder = int(math.floor(data.get('left_encoder', self.left_encoder)))
                 self.right_encoder = int(math.floor(data.get('right_encoder', self.right_encoder)))
@@ -84,7 +87,7 @@ if is_simulation:  # noqa
     class MockDrivetrain:
         def arcade(self, straight, turn):
             request = urllib.request.Request(
-                f"{virtual_robot.url}/arcade",
+                f'{virtual_robot.url}/arcade',
                 data=json.dumps({
                     'robot_id': virtual_robot.robot_id,
                     'straight': straight,

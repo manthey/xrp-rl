@@ -681,6 +681,11 @@ class RobotCommand(BaseModel):
     turn: float
 
 
+class TeamOverride(BaseModel):
+    robot_id: str
+    team: str
+
+
 @app.post('/telemetry')
 async def receive_telemetry(telemetry: Telemetry):
     data = telemetry.model_dump()
@@ -705,6 +710,7 @@ async def override_pose(override: PoseOverride):
         robots[robot_id] = {
             'robot_id': robot_id,
             'virtual': True,
+            'team': 'red',
             'cmd_vel_left': 0.0,
             'cmd_vel_right': 0.0,
             'left_encoder': 0.0,
@@ -731,6 +737,16 @@ async def arcade(cmd: RobotCommand):
             vr = (cmd.straight + cmd.turn) * MAX_WHEEL_SPEED_MMPS
             robots[robot_id]['cmd_vel_left'] = clamp_speed(vl)
             robots[robot_id]['cmd_vel_right'] = clamp_speed(vr)
+    return {'status': 'ok'}
+
+
+@app.post('/team')
+async def set_team(team_override: TeamOverride):
+    robot_id = team_override.robot_id
+    if robot_id in robots:
+        robots[robot_id]['team'] = team_override.team
+    else:
+        return {'status': 'error', 'message': 'robot not found'}
     return {'status': 'ok'}
 
 

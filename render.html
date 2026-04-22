@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>XRP Soccer Field</title>
+    <title>XRP Field</title>
     <style>
       * {
         box-sizing: border-box;
@@ -117,6 +117,7 @@
             <th>Refl R</th>
             <th>Enc L</th>
             <th>Enc R</th>
+            <th>Team</th>
             <th>Virt</th>
           </tr>
         </thead>
@@ -129,6 +130,12 @@
         <input id="ov-y" type="text" inputmode="numeric" value="0" /> Hdg:
         <input id="ov-hdg" type="text" inputmode="numeric" value="0" />
         <button onclick="sendOverride()">Set</button>
+        Team:
+        <select id="ov-team">
+          <option value="red">Red</option>
+          <option value="blue">Blue</option>
+        </select>
+        <button onclick="sendTeam()">Set Team</button>
       </div>
       <div class="section-title">Ball Control</div>
       <div>
