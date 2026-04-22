@@ -15,10 +15,22 @@ function mmScale(mm) {
 }
 
 function computeLayout() {
-  scale = window.innerWidth / (CONFIG.field_length_mm + 2 * CONFIG.goal_depth_mm + 2);
+  const panelHeight = document.getElementById('panel').offsetHeight;
+  const availHeight = window.innerHeight - panelHeight;
+  const totalW = CONFIG.field_length_mm + 2 * CONFIG.goal_depth_mm + 2;
+  const totalH = CONFIG.field_width_mm + 2;
+  const scaleW = window.innerWidth / totalW;
+  const scaleH = availHeight / totalH;
+  scale = Math.min(scaleW, scaleH);
+  const minScale = window.innerWidth / (2 * totalW);
+  scale = Math.max(scale, minScale);
   gd = Math.round(scale * CONFIG.goal_depth_mm);
-  canvas.width = window.innerWidth;
-  canvas.height = Math.round(scale * CONFIG.field_width_mm) + 2;
+  if (canvas.width != Math.round(scale * totalW) || canvas.height != Math.round(scale * totalH)) {
+    canvas.width = Math.round(scale * totalW);
+    canvas.height = Math.round(scale * totalH);
+    canvas.style.width = canvas.width + 'px';
+    canvas.style.height = canvas.height + 'px';
+  }
 }
 
 function fieldToCanvas(x, y) {
