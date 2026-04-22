@@ -1,4 +1,4 @@
-import time
+import math
 
 try:
     from machine import ADC, Pin
@@ -33,8 +33,8 @@ if is_simulation:  # noqa
         def __init__(self, url, robot_id):
             self.url = url
             self.robot_id = robot_id
-            self.left_encoder = 0.0
-            self.right_encoder = 0.0
+            self.left_encoder = 0
+            self.right_encoder = 0
             self.distance_cm = 65535.0
             self.reflectance_left = 1.0
             self.reflectance_right = 1.0
@@ -55,8 +55,8 @@ if is_simulation:  # noqa
             try:
                 response = urllib.request.urlopen(f"{self.url}/robot?robot_id={self.robot_id}")
                 data = json.loads(response.read().decode('utf-8'))
-                self.left_encoder = data.get('left_encoder', self.left_encoder)
-                self.right_encoder = data.get('right_encoder', self.right_encoder)
+                self.left_encoder = int(math.floor(data.get('left_encoder', self.left_encoder)))
+                self.right_encoder = int(math.floor(data.get('right_encoder', self.right_encoder)))
                 self.distance_cm = data.get('distance_cm', self.distance_cm)
                 self.reflectance_left = data.get('reflectance_left', self.reflectance_left)
                 self.reflectance_right = data.get('reflectance_right', self.reflectance_right)
@@ -98,7 +98,6 @@ if is_simulation:  # noqa
                 pass
 
             virtual_robot.update_state()
-            time.sleep(0.05)
 
     class MockMotor:
         def __init__(self, is_left):

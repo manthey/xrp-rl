@@ -14,6 +14,7 @@ import json
 import math
 import os
 import random
+import time
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -723,13 +724,13 @@ async def override_pose(override: PoseOverride):
 
 @app.post('/arcade')
 async def arcade(cmd: RobotCommand):
-    print(cmd)
     robot_id = cmd.robot_id
     if robot_id in robots and robots[robot_id].get('virtual'):
-        vl = (cmd.straight - cmd.turn) * MAX_WHEEL_SPEED_MMPS
-        vr = (cmd.straight + cmd.turn) * MAX_WHEEL_SPEED_MMPS
-        robots[robot_id]['cmd_vel_left'] = clamp_speed(vl)
-        robots[robot_id]['cmd_vel_right'] = clamp_speed(vr)
+        if time.time() - robots[robot_id].get('cmd_last', 0) > 0.1:
+            vl = (cmd.straight - cmd.turn) * MAX_WHEEL_SPEED_MMPS
+            vr = (cmd.straight + cmd.turn) * MAX_WHEEL_SPEED_MMPS
+            robots[robot_id]['cmd_vel_left'] = clamp_speed(vl)
+            robots[robot_id]['cmd_vel_right'] = clamp_speed(vr)
     return {'status': 'ok'}
 
 
@@ -758,6 +759,8 @@ async def websocket_endpoint(ws: WebSocket):
                     vr = (msg.get('straight', 0) + msg.get('turn', 0)) * MAX_WHEEL_SPEED_MMPS
                     robots[robot_id]['cmd_vel_left'] = clamp_speed(vl)
                     robots[robot_id]['cmd_vel_right'] = clamp_speed(vr)
+                    if vl or vr:
+                        robots[robot_id]['cmd_last'] = time.time()
     except WebSocketDisconnect:
         websocket_clients.remove(ws)
 
@@ -790,7 +793,7 @@ def main():
     parser.add_argument('--host', default='0.0.0.0')
     parser.add_argument('--port', '-p', type=int, default=8080)
     args = parser.parse_args()
-    uvicorn.run(app, host=args.host, port=args.port)
+    uvicorn.run(app, host=args.host, port=args.port, access_log=False)
 
 
 if __name__ == '__main__':
