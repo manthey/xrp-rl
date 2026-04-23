@@ -147,11 +147,14 @@ while True:
               rangefinder.distance(), reflectance.get_left(), reflectance.get_right())
 
         batteryVoltage = (ADC(Pin('BOARD_VIN_MEASURE')).read_u16()) / (1024 * 64 / 14)
+        # This won't really work -- pestolink only sends the first 8 characters
+        # of any telemetry and only sends one piece of telemetry every 0.5 s,
+        # so we will get different values at different times
         pestolink.telemetryPrintBatteryVoltage(batteryVoltage)
-        pestolink.telemetryPrint(left_motor.get_position_counts())
-        pestolink.telemetryPrint(right_motor.get_position_counts())
-        pestolink.telemetryPrint(rangefinder.distance())
-        pestolink.telemetryPrint(reflectance.get_left())
-        pestolink.telemetryPrint(reflectance.get_right())
+        pestolink.telemetryPrint(str(left_motor.get_position_counts()), '000000')
+        pestolink.telemetryPrint(str(right_motor.get_position_counts()), '000000')
+        pestolink.telemetryPrint(str(rangefinder.distance()), '000000')
+        pestolink.telemetryPrint(str(reflectance.get_left()), '000000')
+        pestolink.telemetryPrint(str(reflectance.get_right()), '000000')
     else:  # default behavior when no BLE connection is open
         drivetrain.arcade(0, 0)
