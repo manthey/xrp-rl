@@ -21,10 +21,6 @@ TICKS_PER_REV = 585
 MM_PER_TICK = math.pi * WHEEL_DIAMETER_MM / TICKS_PER_REV
 MAX_WHEEL_SPEED_MMPS = 250.0
 
-FRICTION_PER_SEC = 40.0
-RESTITUTION = 0.8
-SIM_HZ = 60
-
 TAPE_LINES = [
     {'x_mm': -FIELD_LENGTH_MM / 4, 'color': 'blue', 'rel': 0.23},
     {'x_mm': FIELD_LENGTH_MM / 4, 'color': 'red', 'rel': 0.24},
@@ -44,8 +40,6 @@ FIELD_CONFIG = {
     'ball_diameter_mm': BALL_DIAMETER_MM,
     'tape_width_mm': TAPE_WIDTH_MM,
     'tape_lines': TAPE_LINES,
-    'friction_per_sec': FRICTION_PER_SEC,
-    'restitution': RESTITUTION,
     'wheel_base_mm': WHEEL_BASE_MM,
     'max_wheel_speed_mmps': MAX_WHEEL_SPEED_MMPS,
 }
