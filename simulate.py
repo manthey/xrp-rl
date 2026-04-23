@@ -22,6 +22,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
+# import util
+
 FIELD_LENGTH_MM = 2175
 FIELD_WIDTH_MM = 1150
 GOAL_WIDTH_MM = 500
