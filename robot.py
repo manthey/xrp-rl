@@ -18,7 +18,7 @@ except ImportError:
 if is_simulation:  # noqa
     parser = argparse.ArgumentParser()
     parser.add_argument('--simulator', default='http://127.0.0.1:8080')
-    parser.add_argument('--robot-id', default='RBV-XRP2')
+    parser.add_argument('--robot-id', '--id', '--name', default='RBV-XRP2')
     parser.add_argument('--team', default='red', choices=['red', 'blue'])
     args = parser.parse_args()
 
@@ -51,10 +51,15 @@ if is_simulation:  # noqa
                 f'{self.url}/pose_override',
                 json={
                     'robot_id': self.robot_id,
-                    'team': self.team,
                     'world_x_mm': -900 if self.team == 'red' else 900,
                     'world_y_mm': 300 if self.team == 'red' else -300,
                     'world_heading_deg': 0 if self.team == 'red' else 180,
+                })
+            self.session.post(
+                f'{self.url}/team',
+                json={
+                    'robot_id': self.robot_id,
+                    'team': self.team,
                 })
 
         def update_state(self):
@@ -164,6 +169,7 @@ else:
 pestolink = PestoLinkAgent(robot_name)
 
 pf = particle_filter.ParticleFilter(team=robot_team)
+last_print = 0
 
 while True:
     if pestolink.is_connected():
@@ -183,10 +189,11 @@ while True:
         pose = pf.get_pose_with_error()
         if is_simulation:
             virtual_robot.send_pose()
-        print(f'{left_ticks:8d} {right_ticks:8d} {distance_cm:7.1f} '
-              f'{refl_l:4.2f} {refl_r:4.2f} {heading:5.1f} '
-              f'{pose["x_mm"]:7.1f} {pose["y_mm"]:6.1f} {pose["heading_deg"]:5.1f}')
-
+        if time.time() - last_print > 10:
+            print(f'{robot_name} {left_ticks:8d} {right_ticks:8d} {distance_cm:7.1f} '
+                  f'{refl_l:4.2f} {refl_r:4.2f} {heading:5.1f} '
+                  f'{pose["x_mm"]:7.1f} {pose["y_mm"]:6.1f} {pose["heading_deg"]:5.1f}')
+            last_print = time.time()
         batteryVoltage = (ADC(Pin('BOARD_VIN_MEASURE')).read_u16()) / (1024 * 64 / 14)
         pestolink.telemetryPrintBatteryVoltage(batteryVoltage)
         # This won't really work -- pestolink only sends the first 8 characters
