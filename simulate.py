@@ -150,6 +150,17 @@ def generate_reflectance_readings(robot):
         robot[f'reflectance_{side}'] = min(1, random.gauss(rel, 0.03))
 
 
+def generate_imu_reading(robot):
+    if 'imu_state' not in robot:
+        robot['imu_state'] = {'bias': random.uniform(0, 360), 'drift': 0.0}
+    robot['imu_state']['drift'] += random.gauss(0, 0.02)
+    robot['imu_state']['drift'] = max(-0.3, min(0.3, robot['imu_state']['drift']))
+    imu = (robot['world_heading_deg'] + robot['imu_state']
+           ['bias'] + robot['imu_state']['drift']) % 360
+    imu += random.gauss(0, 0.2)
+    robot['imu_heading_deg'] = imu % 360
+
+
 def robots_overlap(r1, r2):
     rx1 = r1.get('world_x_mm')
     ry1 = r1.get('world_y_mm')
@@ -381,6 +392,7 @@ async def simulation_loop():
             if robot.get('virtual'):
                 robot['distance_cm'] = generate_distance_reading(robot, robots, ball_state)
                 generate_reflectance_readings(robot)
+                generate_imu_reading(robot)
         virtual_updates = {
             rid: dict(rob) for rid, rob in robots.items() if rob.get('virtual')
         }
@@ -410,6 +422,7 @@ class Telemetry(BaseModel):
     distance_cm: float
     reflectance_left: float
     reflectance_right: float
+    imu_heading_deg: float | None = None
     cmd_vel_left: float
     cmd_vel_right: float
     world_x_mm: float | None = None
@@ -479,6 +492,7 @@ async def override_pose(override: PoseOverride):
     robots[robot_id]['world_x_mm'] = override.world_x_mm
     robots[robot_id]['world_y_mm'] = override.world_y_mm
     robots[robot_id]['world_heading_deg'] = override.world_heading_deg
+    robots[robot_id]['imu_heading_deg'] = override.world_heading_deg
     constrain_robot_to_field(robots[robot_id])
     resolve_robot_overlaps()
     await broadcast({'type': 'pose_override', 'data': override.model_dump()})
@@ -489,7 +503,7 @@ async def override_pose(override: PoseOverride):
 async def arcade(cmd: RobotCommand):
     robot_id = cmd.robot_id
     if robot_id in robots and robots[robot_id].get('virtual'):
-        if time.time() - robots[robot_id].get('cmd_last', 0) > 0.1:
+        if time.time() - robots[robot_id].get('cmd_last', 0) > 1000:
             vl = (cmd.straight - cmd.turn) * MAX_WHEEL_SPEED_MMPS
             vr = (cmd.straight + cmd.turn) * MAX_WHEEL_SPEED_MMPS
             robots[robot_id]['cmd_vel_left'] = clamp_speed(vl)
@@ -524,7 +538,12 @@ async def websocket_endpoint(ws: WebSocket):
     try:
         await ws.send_json({'type': 'init', 'robots': robots, 'ball': ball_state})
         while True:
-            msg = json.loads(await ws.receive_text())
+            raw = await ws.receive_text()
+            try:
+                msg = json.loads(raw)
+            except Exception as e:
+                print(e)
+                continue
             if msg.get('type') == 'arcade':
                 robot_id = msg.get('robot_id')
                 if robot_id in robots and robots[robot_id].get('virtual'):
@@ -534,8 +553,13 @@ async def websocket_endpoint(ws: WebSocket):
                     robots[robot_id]['cmd_vel_right'] = clamp_speed(vr)
                     if vl or vr:
                         robots[robot_id]['cmd_last'] = time.time()
+                    else:
+                        robots[robot_id]['cmd_last'] = 0
     except WebSocketDisconnect:
-        websocket_clients.remove(ws)
+        pass
+    finally:
+        if ws in websocket_clients:
+            websocket_clients.remove(ws)
 
 
 async def broadcast(message: dict):

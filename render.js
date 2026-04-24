@@ -151,7 +151,6 @@ function sendVelocity(robotId, dx, dy, velLabel) {
   const vr = (dy + dx) * maxV;
   velLabel.textContent = `L: ${vl.toFixed(1)}  R: ${vr.toFixed(1)}`;
   if (ws.readyState === WebSocket.OPEN) {
-    // ws.send(JSON.stringify({ type: 'cmd_vel', robot_id: robotId, cmd_vel_left: vl, cmd_vel_right: vr }));
     ws.send(JSON.stringify({ type: 'arcade', robot_id: robotId, straight: dy, turn: dx }));
   }
 }
@@ -307,6 +306,7 @@ function updateTable() {
       rob.world_x_mm?.toFixed(0),
       rob.world_y_mm?.toFixed(0),
       rob.world_heading_deg?.toFixed(1),
+      rob.imu_heading_deg?.toFixed(1),
       rob.distance_cm?.toFixed(1),
       rob.reflectance_left?.toFixed(3),
       rob.reflectance_right?.toFixed(3),

@@ -3,13 +3,13 @@ import math
 try:
     from machine import ADC, Pin
     from pestolink import PestoLinkAgent
-    from XRPLib.defaults import (drivetrain, left_motor, rangefinder,
+    from XRPLib.defaults import (board, drivetrain, left_motor, rangefinder,
                                  reflectance, right_motor)
     is_simulation = False
 except ImportError:
     import argparse
-    import json
-    import urllib.request
+
+    import requests
     is_simulation = True
 
 if is_simulation:  # noqa
@@ -39,30 +39,29 @@ if is_simulation:  # noqa
             self.distance_cm = 65535.0
             self.reflectance_left = 1.0
             self.reflectance_right = 1.0
+            self.imu_heading_deg = 0.0
             self.team = args.team
+            self.session = requests.Session()
 
-            initialization_request = urllib.request.Request(
+            self.session.post(
                 f'{self.url}/pose_override',
-                data=json.dumps({
+                json={
                     'robot_id': self.robot_id,
                     'team': self.team,
                     'world_x_mm': 0.0,
                     'world_y_mm': 0.0,
                     'world_heading_deg': 0.0
-                }).encode('utf-8'),
-                headers={'Content-Type': 'application/json'}
-            )
-            urllib.request.urlopen(initialization_request)
+                })
 
         def update_state(self):
             try:
-                response = urllib.request.urlopen(f'{self.url}/robot?robot_id={self.robot_id}')
-                data = json.loads(response.read().decode('utf-8'))
+                data = self.session.get(f'{self.url}/robot?robot_id={self.robot_id}').json()
                 self.left_encoder = int(math.floor(data.get('left_encoder', self.left_encoder)))
                 self.right_encoder = int(math.floor(data.get('right_encoder', self.right_encoder)))
                 self.distance_cm = data.get('distance_cm', self.distance_cm)
                 self.reflectance_left = data.get('reflectance_left', self.reflectance_left)
                 self.reflectance_right = data.get('reflectance_right', self.reflectance_right)
+                self.imu_heading_deg = data.get('imu_heading_deg', self.imu_heading_deg)
             except Exception:
                 pass
 
@@ -86,20 +85,13 @@ if is_simulation:  # noqa
 
     class MockDrivetrain:
         def arcade(self, straight, turn):
-            request = urllib.request.Request(
+            virtual_robot.session.post(
                 f'{virtual_robot.url}/arcade',
-                data=json.dumps({
+                json={
                     'robot_id': virtual_robot.robot_id,
                     'straight': straight,
                     'turn': turn
-                }).encode('utf-8'),
-                headers={'Content-Type': 'application/json'}
-            )
-            try:
-                urllib.request.urlopen(request)
-            except Exception:
-                pass
-
+                })
             virtual_robot.update_state()
 
     class MockMotor:
@@ -122,6 +114,16 @@ if is_simulation:  # noqa
         def get_right(self):
             return virtual_robot.reflectance_right
 
+    class MockIMU:
+        def calibrate(self):
+            pass
+
+        def get_heading(self):
+            return virtual_robot.imu_heading_deg
+
+    class MockBoard():
+        imu = MockIMU()
+
     Pin = MockPin  # noqa
     ADC = MockADC  # noqa
     PestoLinkAgent = MockPestoLink  # noqa
@@ -130,9 +132,11 @@ if is_simulation:  # noqa
     right_motor = MockMotor(False)  # noqa
     rangefinder = MockRangefinder()  # noqa
     reflectance = MockReflectance()  # noqa
+    board = MockBoard()  # noqa
     robot_name = args.robot_id
 else:
     robot_name = 'RBV-XRP2'
+    board.imu.calibrate()
 
 pestolink = PestoLinkAgent(robot_name)
 
@@ -144,7 +148,8 @@ while True:
         drivetrain.arcade(throttle, rotation)
 
         print(left_motor.get_position_counts(), right_motor.get_position_counts(),
-              rangefinder.distance(), reflectance.get_left(), reflectance.get_right())
+              rangefinder.distance(), reflectance.get_left(), reflectance.get_right(),
+              board.imu.get_heading())
 
         batteryVoltage = (ADC(Pin('BOARD_VIN_MEASURE')).read_u16()) / (1024 * 64 / 14)
         # This won't really work -- pestolink only sends the first 8 characters
@@ -156,5 +161,6 @@ while True:
         pestolink.telemetryPrint(str(rangefinder.distance()), '000000')
         pestolink.telemetryPrint(str(reflectance.get_left()), '000000')
         pestolink.telemetryPrint(str(reflectance.get_right()), '000000')
+        pestolink.telemetryPrint(str(board.imu.get_heading()), '000000')
     else:  # default behavior when no BLE connection is open
         drivetrain.arcade(0, 0)
