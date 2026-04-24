@@ -445,6 +445,16 @@ class PoseOverride(BaseModel):
     world_heading_deg: float
 
 
+class EstimatedPose(BaseModel):
+    robot_id: str
+    x_mm: float
+    y_mm: float
+    heading_deg: float
+    std_x_mm: float
+    std_y_mm: float
+    std_heading_deg: float
+
+
 class RobotCommand(BaseModel):
     robot_id: str
     straight: float
@@ -496,6 +506,17 @@ async def override_pose(override: PoseOverride):
     constrain_robot_to_field(robots[robot_id])
     resolve_robot_overlaps()
     await broadcast({'type': 'pose_override', 'data': override.model_dump()})
+    return {'status': 'ok'}
+
+
+@app.post('/estimated_pose')
+async def receive_estimated_pose(est: EstimatedPose):
+    rid = est.robot_id
+    if rid not in robots:
+        return {'status': 'error', 'message': 'unknown robot'}
+    data = est.model_dump()
+    robots[rid]['estimated_pose'] = data
+    await broadcast({'type': 'estimated_pose', 'data': data})
     return {'status': 'ok'}
 
 

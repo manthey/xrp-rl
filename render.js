@@ -6,6 +6,7 @@ const ctx = canvas.getContext('2d');
 let scale = 1;
 let gd = 0;
 let robots = {};
+let estimatedPoses = {};
 let ball = { world_x_mm: 0, world_y_mm: 0, vel_x_mmps: 0, vel_y_mmps: 0 };
 const joystickState = {};
 const ws = new WebSocket(`ws://${location.host}/ws`);
@@ -246,6 +247,28 @@ function drawBall() {
   ctx.restore();
 }
 
+function drawEstimatedPose(ctx, est) {
+  const k = 2.0;
+  ctx.save();
+  const [ex, ey] = fieldToCanvas(est.x_mm, est.y_mm);
+  ctx.translate(ex, ey);
+  ctx.strokeStyle = 'rgba(0, 200, 255, 0.8)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, k * mmScale(est.std_x_mm), k * mmScale(est.std_y_mm), 0, 0, 2 * Math.PI);
+  ctx.closePath();
+  ctx.stroke();
+  const h = (est.heading_deg * Math.PI) / 180;
+  const dh = (k * (est.std_heading_deg * Math.PI)) / 180;
+  ctx.fillStyle = 'rgba(0, 200, 255, 0.8)';
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.ellipse(0, 0, k * mmScale(est.std_x_mm), k * mmScale(est.std_y_mm), 0, -h - dh, -h + dh);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawRobots() {
   const len2 = mmScale(CONFIG.robot_length_mm / 2);
   const wid2 = mmScale(CONFIG.robot_width_mm / 2);
@@ -273,6 +296,11 @@ function drawRobots() {
     ctx.fillStyle = '#ffffff';
     ctx.fill();
     ctx.restore();
+
+    if (estimatedPoses[id]) {
+      console.log(estimatedPoses[id]); // DWM::
+      drawEstimatedPose(ctx, estimatedPoses[id]);
+    }
 
     ctx.fillStyle = '#ffffff';
     ctx.font = `${Math.max(9, Math.round(mmScale(36)))}px monospace`;
@@ -367,11 +395,11 @@ ws.onmessage = (event) => {
       ball = msg.ball ?? ball;
       rebuildJoysticks();
     },
-    telemetry: () => {
-      robots[msg.data.robot_id] = { ...robots[msg.data.robot_id], ...msg.data };
-    },
     ball: () => {
       ball = msg.data;
+    },
+    estimated_pose: () => {
+      estimatedPoses[msg.data.robot_id] = msg.data;
     },
     pose_override: () => {
       const d = msg.data;
@@ -384,6 +412,9 @@ ws.onmessage = (event) => {
         world_heading_deg: d.world_heading_deg,
       };
       rebuildJoysticks();
+    },
+    telemetry: () => {
+      robots[msg.data.robot_id] = { ...robots[msg.data.robot_id], ...msg.data };
     },
     virtual_robots: () => {
       for (const [id, data] of Object.entries(msg.data)) robots[id] = { ...robots[id], ...data };
