@@ -35,6 +35,7 @@ from util import (BALL_RADIUS_MM, CORNER_RADIUS_MM, FIELD_CONFIG,
 FRICTION_PER_SEC = 40.0
 RESTITUTION = 0.8
 SIM_HZ = 60
+EPISODE_RESTART_DELAY_SEC = 1.0
 
 ball_state: dict = {
     'world_x_mm': 0.0,
@@ -46,7 +47,7 @@ robots: dict[str, dict] = {}
 websocket_clients: list[WebSocket] = []
 robot_rewards: dict[str, dict] = {}
 reward_memory: dict[str, dict] = {}
-sim_state = {'training': False, 'episode_finished': False}
+sim_state = {'training': False, 'episode_finished': False, 'restart': None}
 
 
 def reset_episode():
@@ -54,6 +55,7 @@ def reset_episode():
     robot_rewards.clear()
     reward_memory.clear()
     sim_state['episode_finished'] = False
+    sim_state['restart'] = None
     for team in ('red', 'blue'):
         robot_ids = sorted(rid for rid, robot in robots.items() if robot.get('team', 'red') == team)
         base_x = (-1 if team == 'red' else 1) * FIELD_LENGTH_MM * 3 / 8
@@ -411,6 +413,7 @@ def update_rewards(dt):
     scored_team = scored_goal_team()
     if scored_team is not None and scored_team != reward_memory.get('scored_team'):
         sim_state['episode_finished'] = True
+        sim_state['restart'] = time.time() + EPISODE_RESTART_DELAY_SEC
         for robot in robots.values():
             robot['cmd_vel_left'] = robot['cmd_vel_right'] = 0.0
     already_scored = reward_memory.get('scored_team')
@@ -468,6 +471,12 @@ async def simulation_loop():
     dt = 1.0 / SIM_HZ
     while True:
         await asyncio.sleep(dt)
+        if sim_state['training'] and sim_state['restart'] is not None:
+            if time.time() >= sim_state['restart']:
+                reset_episode()
+                for robot in robots.values():
+                    if robot.get('virtual'):
+                        robot['training'] = True
         for robot in robots.values():
             if robot.get('virtual'):
                 step_virtual_robot(robot, dt)
@@ -578,10 +587,6 @@ async def get_reward(robot_id: str):
     terminal = entry['terminal']
     entry['reward'] = 0.0
     entry['terminal'] = False
-    if terminal:
-        sim_state['training'] = False
-        for robot in robots.values():
-            robot['training'] = False
     return {'robot_id': robot_id, 'reward': reward, 'terminal': terminal}
 
 
