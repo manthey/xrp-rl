@@ -40,7 +40,7 @@ class ParticleFilter:
         self.team = team
         self.reset()
 
-    def reser(self):
+    def reset(self):
         self.particles = []
         self.prev_left_ticks = None
         self.prev_right_ticks = None

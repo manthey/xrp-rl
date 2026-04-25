@@ -81,7 +81,7 @@ if is_simulation:  # noqa
                 if data.get('reset', False):
                     pf.reset()
                     agent.reset_episode()
-                self.trainihg = data.get('training', self.training)
+                self.training = data.get('training', self.training)
             except Exception:
                 pass
 
@@ -140,7 +140,6 @@ if is_simulation:  # noqa
                     'straight': straight,
                     'turn': turn
                 })
-            virtual_robot.update_state()
 
     class MockMotor:
         def __init__(self, is_left):
@@ -207,6 +206,8 @@ while True:
             rotation = -1 * pestolink.get_axis(2)
             throttle = -1 * pestolink.get_axis(1)
             drivetrain.arcade(throttle, rotation)
+        if is_simulation:
+            virtual_robot.update_state()
 
         left_ticks = left_motor.get_position_counts()
         right_ticks = right_motor.get_position_counts()

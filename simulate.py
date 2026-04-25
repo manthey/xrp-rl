@@ -46,6 +46,32 @@ robots: dict[str, dict] = {}
 websocket_clients: list[WebSocket] = []
 robot_rewards: dict[str, dict] = {}
 reward_memory: dict[str, dict] = {}
+sim_state = {'training': False, 'episode_finished': False}
+
+
+def reset_episode():
+    ball_state.update({'world_x_mm': 0.0, 'world_y_mm': 0.0, 'vel_x_mmps': 0.0, 'vel_y_mmps': 0.0})
+    robot_rewards.clear()
+    reward_memory.clear()
+    sim_state['episode_finished'] = False
+    for team in ('red', 'blue'):
+        robot_ids = sorted(rid for rid, robot in robots.items() if robot.get('team', 'red') == team)
+        base_x = (-1 if team == 'red' else 1) * FIELD_LENGTH_MM * 3 / 8
+        base_heading = 0 if team == 'red' else 180
+        for index, robot_id in enumerate(robot_ids):
+            heading = (base_heading + random.gauss(0, 5)) % 360
+            robots[robot_id].update({
+                'world_x_mm': random.gauss(base_x, 100),
+                'world_y_mm': random.gauss((1 if index % 2 == 0 else -1) * FIELD_WIDTH_MM / 4, 100),
+                'world_heading_deg': heading,
+                'imu_heading_deg': heading,
+                'left_encoder': 0.0,
+                'right_encoder': 0.0,
+                'cmd_vel_left': 0.0,
+                'cmd_vel_right': 0.0,
+                'distance_cm': 65535.0,
+                'training': False,
+                'reset': True})
 
 
 class RobotPose:
@@ -383,6 +409,10 @@ def scored_goal_team():
 
 def update_rewards(dt):
     scored_team = scored_goal_team()
+    if scored_team is not None and scored_team != reward_memory.get('scored_team'):
+        sim_state['episode_finished'] = True
+        for robot in robots.values():
+            robot['cmd_vel_left'] = robot['cmd_vel_right'] = 0.0
     already_scored = reward_memory.get('scored_team')
     new_goal = scored_team is not None and scored_team != already_scored
     if scored_team is None:
@@ -464,6 +494,7 @@ async def simulation_loop():
         update_rewards(dt)
         for robot in robots.values():
             if robot.get('virtual'):
+                robot['training'] = sim_state['training']
                 robot['distance_cm'] = generate_distance_reading(robot, robots, ball_state)
                 generate_reflectance_readings(robot)
                 generate_imu_reading(robot)
@@ -547,6 +578,10 @@ async def get_reward(robot_id: str):
     terminal = entry['terminal']
     entry['reward'] = 0.0
     entry['terminal'] = False
+    if terminal:
+        sim_state['training'] = False
+        for robot in robots.values():
+            robot['training'] = False
     return {'robot_id': robot_id, 'reward': reward, 'terminal': terminal}
 
 
@@ -582,6 +617,8 @@ async def override_pose(override: PoseOverride):
             'distance_cm': 0.0,
             'reflectance_left': 1.0,
             'reflectance_right': 1.0,
+            'training': sim_state['training'],
+            'reset': False,
         }
     robots[robot_id]['world_x_mm'] = override.world_x_mm
     robots[robot_id]['world_y_mm'] = override.world_y_mm
@@ -607,7 +644,7 @@ async def receive_estimated_pose(est: EstimatedPose):
 @app.post('/arcade')
 async def arcade(cmd: RobotCommand):
     robot_id = cmd.robot_id
-    if robot_id in robots and robots[robot_id].get('virtual'):
+    if robot_id in robots and robots[robot_id].get('virtual') and not sim_state['episode_finished']:
         if time.time() - robots[robot_id].get('cmd_last', 0) > 1000:
             vl = (cmd.straight - cmd.turn) * MAX_WHEEL_SPEED_MMPS
             vr = (cmd.straight + cmd.turn) * MAX_WHEEL_SPEED_MMPS
@@ -633,7 +670,10 @@ async def get_robots():
 
 @app.get('/robot')
 async def get_robot(robot_id: str):
-    return robots[robot_id]
+    robot = robots[robot_id]
+    data = dict(robot)
+    data['reset'] = bool(robot.pop('reset', False))
+    return data
 
 
 @app.websocket('/ws')
@@ -651,7 +691,8 @@ async def websocket_endpoint(ws: WebSocket):
                 continue
             if msg.get('type') == 'arcade':
                 robot_id = msg.get('robot_id')
-                if robot_id in robots and robots[robot_id].get('virtual'):
+                if (robot_id in robots and robots[robot_id].get('virtual') and
+                        not sim_state['episode_finished']):
                     vl = (msg.get('straight', 0) - msg.get('turn', 0)) * MAX_WHEEL_SPEED_MMPS
                     vr = (msg.get('straight', 0) + msg.get('turn', 0)) * MAX_WHEEL_SPEED_MMPS
                     robots[robot_id]['cmd_vel_left'] = clamp_speed(vl)
@@ -661,8 +702,15 @@ async def websocket_endpoint(ws: WebSocket):
                     else:
                         robots[robot_id]['cmd_last'] = 0
             if msg.get('type') == 'train':
-                active = msg.get('active')
-                # todo: start or stop training; active is either true or false
+                active = bool(msg.get('active'))
+                if active and not sim_state['training']:
+                    sim_state['training'] = True
+                    reset_episode()
+                elif not active:
+                    sim_state['training'] = False
+                    for robot in robots.values():
+                        robot['training'] = False
+                        robot['cmd_vel_left'] = robot['cmd_vel_right'] = 0.0
     except WebSocketDisconnect:
         pass
     finally:
