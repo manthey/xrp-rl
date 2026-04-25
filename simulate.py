@@ -469,8 +469,12 @@ def update_rewards(dt):
 
 async def simulation_loop():
     dt = 1.0 / SIM_HZ
+    next_time = time.time()
     while True:
-        await asyncio.sleep(dt)
+        wait = next_time - time.time()
+        next_time += dt
+        if wait > 0:
+            await asyncio.sleep(wait)
         if sim_state['training'] and sim_state['restart'] is not None:
             if time.time() >= sim_state['restart']:
                 reset_episode()
