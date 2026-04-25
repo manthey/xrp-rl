@@ -9,7 +9,23 @@ let robots = {};
 let estimatedPoses = {};
 let ball = { world_x_mm: 0, world_y_mm: 0, vel_x_mmps: 0, vel_y_mmps: 0 };
 const joystickState = {};
-const ws = new WebSocket(`ws://${location.host}/ws`);
+let ws = null;
+
+function connectWebSocket() {
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onmessage = onWsMessage;
+  ws.onclose = () => {};
+}
+
+function closeWebSocket() {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) closeWebSocket();
+  else connectWebSocket();
+});
 
 function mmScale(mm) {
   return mm * scale;
@@ -393,7 +409,7 @@ function sendBallState() {
 
 window.addEventListener('resize', render);
 
-ws.onmessage = (event) => {
+function onWsMessage(event) {
   const msg = JSON.parse(event.data);
   const handlers = {
     init: () => {
@@ -430,6 +446,7 @@ ws.onmessage = (event) => {
   render();
   updateBallInfo();
   updateTable();
-};
+}
 
+connectWebSocket();
 render();
