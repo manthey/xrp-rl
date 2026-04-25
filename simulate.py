@@ -44,6 +44,8 @@ ball_state: dict = {
 }
 robots: dict[str, dict] = {}
 websocket_clients: list[WebSocket] = []
+robot_rewards: dict[str, dict] = {}
+reward_memory: dict[str, dict] = {}
 
 
 class RobotPose:
@@ -361,6 +363,77 @@ def step_virtual_robot(robot: dict, dt: float):
     robot['right_encoder'] = robot.get('right_encoder', 0.0) + vr * dt / MM_PER_TICK
 
 
+def team_goal_direction(team):
+    return 1.0 if team == 'red' else -1.0
+
+
+def scored_goal_team():
+    half_len = FIELD_LENGTH_MM / 2
+    goal_half = GOAL_WIDTH_MM / 2 - BALL_RADIUS_MM
+    bx = ball_state['world_x_mm']
+    by = ball_state['world_y_mm']
+    if abs(by) > goal_half:
+        return None
+    if bx > half_len:
+        return 'red'
+    if bx < -half_len:
+        return 'blue'
+    return None
+
+
+def update_rewards(dt):
+    scored_team = scored_goal_team()
+    already_scored = reward_memory.get('scored_team')
+    new_goal = scored_team is not None and scored_team != already_scored
+    if scored_team is None:
+        reward_memory['scored_team'] = None
+    elif new_goal:
+        reward_memory['scored_team'] = scored_team
+
+    bx = ball_state['world_x_mm']
+    by = ball_state['world_y_mm']
+    vx = ball_state['vel_x_mmps']
+
+    for rid, robot in robots.items():
+        rx = robot.get('world_x_mm')
+        ry = robot.get('world_y_mm')
+        if rx is None or ry is None:
+            continue
+        team = robot.get('team', 'red')
+        direction = team_goal_direction(team)
+        dist_to_ball = math.sqrt((bx - rx) ** 2 + (by - ry) ** 2)
+        prev = reward_memory.get(rid)
+        if prev is None:
+            reward_memory[rid] = {
+                'ball_x': bx,
+                'ball_y': by,
+                'dist_to_ball': dist_to_ball,
+            }
+            robot_rewards.setdefault(rid, {'reward': 0.0, 'terminal': False})
+            continue
+
+        ball_progress = direction * (bx - prev['ball_x'])
+        approach = prev['dist_to_ball'] - dist_to_ball
+        reward = -0.002 * dt
+        reward += 0.0025 * ball_progress
+        reward += 0.0010 * approach
+        reward += 0.0005 * direction * vx * dt
+        if dist_to_ball < 170:
+            reward += 0.01 * dt
+
+        terminal = False
+        if new_goal:
+            terminal = True
+            reward += 100.0 if scored_team == team else -100.0
+
+        entry = robot_rewards.setdefault(rid, {'reward': 0.0, 'terminal': False})
+        entry['reward'] += reward
+        entry['terminal'] = entry['terminal'] or terminal
+        prev['ball_x'] = bx
+        prev['ball_y'] = by
+        prev['dist_to_ball'] = dist_to_ball
+
+
 async def simulation_loop():
     dt = 1.0 / SIM_HZ
     while True:
@@ -388,6 +461,7 @@ async def simulation_loop():
         if abs(vx) < 0.5 and abs(vy) < 0.5:
             ball_state['vel_x_mmps'] = 0.0
             ball_state['vel_y_mmps'] = 0.0
+        update_rewards(dt)
         for robot in robots.values():
             if robot.get('virtual'):
                 robot['distance_cm'] = generate_distance_reading(robot, robots, ball_state)
@@ -464,6 +538,16 @@ class RobotCommand(BaseModel):
 class TeamOverride(BaseModel):
     robot_id: str
     team: str
+
+
+@app.get('/reward')
+async def get_reward(robot_id: str):
+    entry = robot_rewards.setdefault(robot_id, {'reward': 0.0, 'terminal': False})
+    reward = entry['reward']
+    terminal = entry['terminal']
+    entry['reward'] = 0.0
+    entry['terminal'] = False
+    return {'robot_id': robot_id, 'reward': reward, 'terminal': terminal}
 
 
 @app.post('/telemetry')

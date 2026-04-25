@@ -1,7 +1,9 @@
 import math
+import os
 import time
 
 import particle_filter
+import rl
 
 try:
     from machine import ADC, Pin
@@ -20,6 +22,9 @@ if is_simulation:  # noqa
     parser.add_argument('--simulator', default='http://127.0.0.1:8080')
     parser.add_argument('--robot-id', '--id', '--name', default='RBV-XRP2')
     parser.add_argument('--team', default='red', choices=['red', 'blue'])
+    parser.add_argument('--pos', default='high', choices=['high', 'low'])
+    parser.add_argument('--mode', default='train', choices=['manual', 'rl', 'train'])
+    parser.add_argument('--q-file', default='qtable.json')
     args = parser.parse_args()
 
     class MockPin:
@@ -44,6 +49,7 @@ if is_simulation:  # noqa
             self.reflectance_right = 1.0
             self.imu_heading_deg = 0.0
             self.team = args.team
+            self.pos = args.pos
             self.session = requests.Session()
             self.last_pf_report = 0
 
@@ -52,7 +58,7 @@ if is_simulation:  # noqa
                 json={
                     'robot_id': self.robot_id,
                     'world_x_mm': -900 if self.team == 'red' else 900,
-                    'world_y_mm': 300 if self.team == 'red' else -300,
+                    'world_y_mm': 300 if self.pos == 'high' else -300,
                     'world_heading_deg': 0 if self.team == 'red' else 180,
                 })
             self.session.post(
@@ -90,6 +96,17 @@ if is_simulation:  # noqa
                     'std_y_mm': pose['std_y_mm'],
                     'std_heading_deg': pose['std_heading_deg'],
                 })
+
+        def get_reward(self):
+            try:
+                data = self.session.get(
+                    f'{self.url}/reward?robot_id={self.robot_id}').json()
+                return float(data.get('reward', 0.0)), bool(data.get('terminal', False))
+            except Exception:
+                return 0.0, False
+
+        def save_policy(self, path, agent):
+            agent.save(path)
 
     virtual_robot = VirtualRobot(args.simulator, args.robot_id)
 
@@ -161,22 +178,30 @@ if is_simulation:  # noqa
     board = MockBoard()  # noqa
     robot_name = args.robot_id
     robot_team = args.team
+    robot_mode = args.mode
+    q_file = args.q_file
 else:
     robot_name = 'RBV-XRP2'
     robot_team = 'red'
+    q_file = 'qtable.json'
+    robot_mode = 'rl' if os.path.exists(q_file) else 'manual'
     board.imu.calibrate()
 
 pestolink = PestoLinkAgent(robot_name)
 
 pf = particle_filter.ParticleFilter(team=robot_team)
+agent = rl.QAgent(team=robot_team, epsilon=0.15 if robot_mode == 'train' else 0.0)
+agent.load(q_file)
+last_save = time.time()
+next_action_time = 0
 last_print = 0
 
 while True:
     if pestolink.is_connected():
-        rotation = -1 * pestolink.get_axis(2)
-        throttle = -1 * pestolink.get_axis(1)
-
-        drivetrain.arcade(throttle, rotation)
+        if robot_mode == 'manual':
+            rotation = -1 * pestolink.get_axis(2)
+            throttle = -1 * pestolink.get_axis(1)
+            drivetrain.arcade(throttle, rotation)
 
         left_ticks = left_motor.get_position_counts()
         right_ticks = right_motor.get_position_counts()
@@ -189,6 +214,24 @@ while True:
         pose = pf.get_pose_with_error()
         if is_simulation:
             virtual_robot.send_pose()
+        if robot_mode != 'manual' and time.time() >= next_action_time:
+            state = agent.discretize(pose, distance_cm, refl_l, refl_r)
+            reward = 0.0
+            terminal = False
+            if is_simulation and robot_mode == 'train':
+                reward, terminal = virtual_robot.get_reward()
+            agent.learn_from_transition(state, reward, terminal)
+            if terminal:
+                agent.reset_episode()
+                agent.save(q_file)
+            action = agent.choose_action(state)
+            straight, turn = agent.command(action)
+            drivetrain.arcade(straight, turn)
+            agent.remember(state, action)
+            next_action_time = time.time() + 0.25
+        if robot_mode == 'train' and time.time() - last_save > 30:
+            agent.save(q_file)
+            last_save = time.time()
         if time.time() - last_print > 10:
             print(f'{robot_name} {left_ticks:8d} {right_ticks:8d} {distance_cm:7.1f} '
                   f'{refl_l:4.2f} {refl_r:4.2f} {heading:5.1f} '
