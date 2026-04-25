@@ -85,9 +85,9 @@ class ParticleFilter:
         d_heading_enc = math.degrees((dr - dl) / WHEEL_BASE_MM)
         d_imu = ((imu_deg - self.prev_imu_deg + 540) % 360) - 180
         self.prev_imu_deg = imu_deg
-        d_heading = 0.7 * d_imu + 0.3 * d_heading_enc
+        d_heading = 0.9 * d_imu + 0.1 * d_heading_enc
         dist_noise = max(2.0, abs(dist) * 0.2)
-        heading_noise = max(1.0, abs(d_heading) * 0.2)
+        heading_noise = max(0.5, abs(d_heading) * 0.1)
         for p in self.particles:
             d = dist + gauss(0, dist_noise)
             dh = d_heading + gauss(0, heading_noise)
