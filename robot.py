@@ -52,6 +52,7 @@ if is_simulation:  # noqa
             self.pos = args.pos
             self.session = requests.Session()
             self.last_pf_report = 0
+            self.training = False
 
             self.session.post(
                 f'{self.url}/pose_override',
@@ -77,6 +78,10 @@ if is_simulation:  # noqa
                 self.reflectance_left = data.get('reflectance_left', self.reflectance_left)
                 self.reflectance_right = data.get('reflectance_right', self.reflectance_right)
                 self.imu_heading_deg = data.get('imu_heading_deg', self.imu_heading_deg)
+                if data.get('reset', False):
+                    pf.reset()
+                    agent.reset_episode()
+                self.trainihg = data.get('training', self.training)
             except Exception:
                 pass
 
@@ -214,7 +219,8 @@ while True:
         pose = pf.get_pose_with_error()
         if is_simulation:
             virtual_robot.send_pose()
-        if robot_mode != 'manual' and time.time() >= next_action_time:
+        if robot_mode != 'manual' and time.time() >= next_action_time and (
+                robot_mode != 'train' or virtual_robot.training):
             state = agent.discretize(pose, distance_cm, refl_l, refl_r)
             reward = 0.0
             terminal = False

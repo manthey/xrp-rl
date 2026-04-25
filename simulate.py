@@ -660,6 +660,9 @@ async def websocket_endpoint(ws: WebSocket):
                         robots[robot_id]['cmd_last'] = time.time()
                     else:
                         robots[robot_id]['cmd_last'] = 0
+            if msg.get('type') == 'train':
+                active = msg.get('active')
+                # todo: start or stop training; active is either true or false
     except WebSocketDisconnect:
         pass
     finally:

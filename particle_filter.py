@@ -38,6 +38,9 @@ class ParticleFilter:
     def __init__(self, team='red', num_particles=NUM_PARTICLES):
         self.num_particles = num_particles
         self.team = team
+        self.reset()
+
+    def reser(self):
         self.particles = []
         self.prev_left_ticks = None
         self.prev_right_ticks = None

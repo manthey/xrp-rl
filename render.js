@@ -156,6 +156,12 @@ function sendVelocity(robotId, dx, dy, velLabel) {
   }
 }
 
+function train(active) {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'train', active: !!active }));
+  }
+}
+
 function rebuildJoysticks() {
   const container = document.getElementById('joysticks');
   const virtualIds = Object.keys(robots).filter((id) => robots[id].virtual);
