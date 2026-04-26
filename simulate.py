@@ -476,6 +476,7 @@ def update_rewards(dt):
 async def simulation_loop():  # noqa
     dt = 1.0 / SIM_HZ
     next_time = time.time()
+    last_training_broadcast = 0.0
     while True:
         wait = max(0.001, next_time - time.time())
         next_time += dt
@@ -531,6 +532,17 @@ async def simulation_loop():  # noqa
         if virtual_updates:
             await broadcast({'type': 'virtual_robots', 'data': virtual_updates})
         await broadcast({'type': 'ball', 'data': dict(ball_state)})
+        now = time.time()
+        if sim_state['training'] and now - last_training_broadcast >= 10.0:
+            last_training_broadcast = now
+            await broadcast({
+                'type': 'training_state',
+                'data': {
+                    'training': sim_state['training'],
+                    'run_number': sim_state['run_number'],
+                    'run_start_time': sim_state['run_start_time'],
+                }
+            })
 
 
 @asynccontextmanager
