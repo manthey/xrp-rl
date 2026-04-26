@@ -406,7 +406,13 @@ function sendBallState() {
     vel_y_mmps: getInputValue('ball-vy'),
   });
 }
-
+function updateTrainingInfo(state) {
+  const infoEl = document.getElementById('training-info');
+  if (state.run_number !== undefined && state.run_start_time) {
+    const elapsed = (Date.now() / 1000 - state.run_start_time).toFixed(1);
+    infoEl.textContent = `Run: ${state.run_number}, Time: ${elapsed}s`;
+  }
+}
 window.addEventListener('resize', render);
 
 function onWsMessage(event) {
@@ -434,6 +440,9 @@ function onWsMessage(event) {
         world_heading_deg: d.world_heading_deg,
       };
       rebuildJoysticks();
+    },
+    training_state: () => {
+      updateTrainingInfo(msg.data);
     },
     telemetry: () => {
       robots[msg.data.robot_id] = { ...robots[msg.data.robot_id], ...msg.data };

@@ -47,7 +47,8 @@ robots: dict[str, dict] = {}
 websocket_clients: list[WebSocket] = []
 robot_rewards: dict[str, dict] = {}
 reward_memory: dict[str, dict] = {}
-sim_state = {'training': False, 'episode_finished': False, 'restart': None}
+sim_state = {'training': False, 'episode_finished': False, 'restart': None,
+             'run_number': 0, 'run_start_time': None}
 
 
 def reset_episode():
@@ -56,15 +57,19 @@ def reset_episode():
     reward_memory.clear()
     sim_state['episode_finished'] = False
     sim_state['restart'] = None
+    sim_state['run_number'] += 1
+    sim_state['run_start_time'] = time.time()
     for team in ('red', 'blue'):
         robot_ids = sorted(rid for rid, robot in robots.items() if robot.get('team', 'red') == team)
         base_x = (-1 if team == 'red' else 1) * FIELD_LENGTH_MM * 3 / 8
         base_heading = 0 if team == 'red' else 180
+        offset = 0 if random.random() >= 0.5 else 1
         for index, robot_id in enumerate(robot_ids):
             heading = (base_heading + random.gauss(0, 5)) % 360
             robots[robot_id].update({
                 'world_x_mm': random.gauss(base_x, 100),
-                'world_y_mm': random.gauss((1 if index % 2 == 0 else -1) * FIELD_WIDTH_MM / 4, 100),
+                'world_y_mm': random.gauss(
+                    (1 if (index + offset) % 2 == 0 else -1) * FIELD_WIDTH_MM / 4, 100),
                 'world_heading_deg': heading,
                 'imu_heading_deg': heading,
                 'left_encoder': 0.0,
@@ -72,7 +77,7 @@ def reset_episode():
                 'cmd_vel_left': 0.0,
                 'cmd_vel_right': 0.0,
                 'distance_cm': 65535.0,
-                'training': False,
+                'training': sim_state['training'],
                 'reset': True})
 
 
@@ -467,17 +472,25 @@ def update_rewards(dt):
         prev['dist_to_ball'] = dist_to_ball
 
 
-async def simulation_loop():
+async def simulation_loop():  # noqa
     dt = 1.0 / SIM_HZ
     next_time = time.time()
     while True:
-        wait = next_time - time.time()
+        wait = max(0.001, next_time - time.time())
         next_time += dt
         if wait > 0:
             await asyncio.sleep(wait)
         if sim_state['training'] and sim_state['restart'] is not None:
             if time.time() >= sim_state['restart']:
                 reset_episode()
+                await broadcast({
+                    'type': 'training_state',
+                    'data': {
+                        'training': sim_state['training'],
+                        'run_number': sim_state['run_number'],
+                        'run_start_time': sim_state['run_start_time'],
+                    }
+                })
                 for robot in robots.values():
                     if robot.get('virtual'):
                         robot['training'] = True
@@ -691,6 +704,14 @@ async def websocket_endpoint(ws: WebSocket):
     websocket_clients.append(ws)
     try:
         await ws.send_json({'type': 'init', 'robots': robots, 'ball': ball_state})
+        await ws.send_json({
+            'type': 'training_state',
+            'data': {
+                'training': sim_state['training'],
+                'run_number': sim_state['run_number'],
+                'run_start_time': sim_state['run_start_time'],
+            }
+        })
         while True:
             raw = await ws.receive_text()
             try:
@@ -731,11 +752,14 @@ async def broadcast(message: dict):
     disconnected = []
     for ws in websocket_clients:
         try:
-            await ws.send_json(message)
+            await asyncio.wait_for(ws.send_json(message), timeout=0.5)
         except Exception:
             disconnected.append(ws)
     for ws in disconnected:
-        websocket_clients.remove(ws)
+        try:
+            websocket_clients.remove(ws)
+        except ValueError:
+            pass
 
 
 def build_html(config: dict) -> str:

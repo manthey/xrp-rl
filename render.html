@@ -95,6 +95,9 @@
         height: 160px;
         flex: none;
       }
+      #ov-id {
+        width: 80px;
+      }
     </style>
   </head>
   <body>
@@ -126,9 +129,8 @@
       </table>
       <div class="section-title">Pose Override / Create Virtual Robot</div>
       <div>
-        Robot ID: <input id="ov-id" type="text" style="width: 80px" /> X mm:
-        <input id="ov-x" type="text" inputmode="numeric" value="0" /> Y mm:
-        <input id="ov-y" type="text" inputmode="numeric" value="0" /> Hdg:
+        Robot ID: <input id="ov-id" type="text" /> X mm: <input id="ov-x" type="text" inputmode="numeric" value="0" /> Y
+        mm: <input id="ov-y" type="text" inputmode="numeric" value="0" /> Hdg:
         <input id="ov-hdg" type="text" inputmode="numeric" value="0" />
         <button onclick="sendOverride()">Set</button>
         Team:
@@ -140,6 +142,7 @@
       </div>
       <div>
         <button onclick="train(true)">Start Training</button>
+        <span id="training-info"></span>
         <button onclick="train(false)">Stop Training</button>
       </div>
       <div class="section-title">Ball Control</div>
