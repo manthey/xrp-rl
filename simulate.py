@@ -32,8 +32,8 @@ from util import (BALL_RADIUS_MM, CORNER_RADIUS_MM, FIELD_CONFIG,
                   closest_point_on_rounded_rect, point_in_field, ray_to_ball,
                   ray_to_field_boundary, ray_to_robot, robot_corners)
 
-FRICTION_PER_SEC = 40.0
-RESTITUTION = 0.8
+FRICTION_PER_SEC = 60.0
+RESTITUTION = 0.7
 SIM_HZ = 60
 EPISODE_RESTART_DELAY_SEC = 1.0
 EPISODE_MAXIMUM_TIME = 300.0
