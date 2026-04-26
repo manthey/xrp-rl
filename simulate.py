@@ -36,6 +36,7 @@ FRICTION_PER_SEC = 40.0
 RESTITUTION = 0.8
 SIM_HZ = 60
 EPISODE_RESTART_DELAY_SEC = 1.0
+EPISODE_MAXIMUM_TIME = 300.0
 
 ball_state: dict = {
     'world_x_mm': 0.0,
@@ -417,7 +418,9 @@ def scored_goal_team():
 
 def update_rewards(dt):
     scored_team = scored_goal_team()
-    if scored_team is not None and scored_team != reward_memory.get('scored_team'):
+    over_time = sim_state['run_start_time'] and (
+                time.time() - sim_state['run_start_time'] > EPISODE_MAXIMUM_TIME)
+    if over_time or (scored_team is not None and scored_team != reward_memory.get('scored_team')):
         sim_state['episode_finished'] = True
         sim_state['restart'] = time.time() + EPISODE_RESTART_DELAY_SEC
         for robot in robots.values():
@@ -447,7 +450,6 @@ def update_rewards(dt):
                 'ball_x': bx,
                 'ball_y': by,
                 'dist_to_ball': dist_to_ball,
-                'start_time': time.time(),
             }
             robot_rewards.setdefault(rid, {'reward': 0.0, 'terminal': False})
             continue
@@ -465,9 +467,6 @@ def update_rewards(dt):
         if new_goal:
             terminal = True
             reward += 100.0 if scored_team == team else -100.0
-        elif time.time() - reward_memory[rid]['start_timr'] > 300:
-            terminal = True
-            reward -= 50
 
         entry = robot_rewards.setdefault(rid, {'reward': 0.0, 'terminal': False})
         entry['reward'] += reward
