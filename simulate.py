@@ -49,7 +49,8 @@ websocket_clients: list[WebSocket] = []
 robot_rewards: dict[str, dict] = {}
 reward_memory: dict[str, dict] = {}
 sim_state = {'training': False, 'episode_finished': False, 'restart': None,
-             'run_number': 0, 'run_start_time': None}
+             'run_number': 0, 'run_start_time': None, 'sim_time': 0.0,
+             'sim_start': 0.0, 'fast': False}
 
 
 def reset_episode():
@@ -60,6 +61,7 @@ def reset_episode():
     sim_state['restart'] = None
     sim_state['run_number'] += 1
     sim_state['run_start_time'] = time.time()
+    sim_state['sim_start'] = sim_state['sim_time']
     for team in ('red', 'blue'):
         robot_ids = sorted(rid for rid, robot in robots.items() if robot.get('team', 'red') == team)
         base_x = (-1 if team == 'red' else 1) * FIELD_LENGTH_MM * 3 / 8
@@ -419,11 +421,11 @@ def scored_goal_team():
 def update_rewards(dt):
     scored_team = scored_goal_team()
     over_time = sim_state['run_start_time'] and (
-                time.time() - sim_state['run_start_time'] > EPISODE_MAXIMUM_TIME)
+        sim_state['sim_time'] - sim_state['sim_start'] > EPISODE_MAXIMUM_TIME)
     if not sim_state['episode_finished'] and (over_time or (
             scored_team is not None and scored_team != reward_memory.get('scored_team'))):
         sim_state['episode_finished'] = True
-        sim_state['restart'] = time.time() + EPISODE_RESTART_DELAY_SEC
+        sim_state['restart'] = sim_state['sim_time'] + EPISODE_RESTART_DELAY_SEC
         for robot in robots.values():
             robot['cmd_vel_left'] = robot['cmd_vel_right'] = 0.0
     already_scored = reward_memory.get('scored_team')
@@ -482,12 +484,13 @@ async def simulation_loop():  # noqa
     next_time = time.time()
     last_training_broadcast = 0.0
     while True:
-        wait = max(0.001, next_time - time.time())
+        wait = 0.0001 if sim_state['fast'] else max(0.001, next_time - time.time())
         next_time += dt
+        sim_state['sim_time'] += dt
         if wait > 0:
             await asyncio.sleep(wait)
         if sim_state['training'] and sim_state['restart'] is not None:
-            if time.time() >= sim_state['restart']:
+            if sim_state['sim_time'] >= sim_state['restart']:
                 reset_episode()
                 await broadcast({
                     'type': 'training_state',
@@ -495,6 +498,8 @@ async def simulation_loop():  # noqa
                         'training': sim_state['training'],
                         'run_number': sim_state['run_number'],
                         'run_start_time': sim_state['run_start_time'],
+                        'sim_start': sim_state['sim_start'],
+                        'sim_time': sim_state['sim_time'],
                     }
                 })
                 for robot in robots.values():
@@ -545,6 +550,8 @@ async def simulation_loop():  # noqa
                     'training': sim_state['training'],
                     'run_number': sim_state['run_number'],
                     'run_start_time': sim_state['run_start_time'],
+                    'sim_start': sim_state['sim_start'],
+                    'sim_time': sim_state['sim_time'],
                 }
             })
 
@@ -713,6 +720,8 @@ async def get_robot(robot_id: str):
     robot = robots[robot_id]
     data = dict(robot)
     data['reset'] = bool(robot.pop('reset', False))
+    data['sim_start'] = sim_state['sim_start']
+    data['sim_time'] = sim_state['sim_time']
     return data
 
 
@@ -728,6 +737,8 @@ async def websocket_endpoint(ws: WebSocket):
                 'training': sim_state['training'],
                 'run_number': sim_state['run_number'],
                 'run_start_time': sim_state['run_start_time'],
+                'sim_start': sim_state['sim_start'],
+                'sim_time': sim_state['sim_time'],
             }
         })
         while True:
@@ -796,7 +807,9 @@ def main():
     parser = argparse.ArgumentParser(description='XRP Soccer Field Telemetry Visualizer')
     parser.add_argument('--host', default='0.0.0.0')
     parser.add_argument('--port', '-p', type=int, default=8080)
+    parser.add_argument('--fast', action='store_true', default=False)
     args = parser.parse_args()
+    sim_state['fast'] = args.fast
     uvicorn.run(app, host=args.host, port=args.port, access_log=False)
 
 

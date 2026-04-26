@@ -52,6 +52,7 @@ if is_simulation:  # noqa
             self.pos = args.pos
             self.session = requests.Session()
             self.last_pf_report = 0
+            self.sim_time = 0.0
             self.training = False
 
             self.session.post(
@@ -79,14 +80,16 @@ if is_simulation:  # noqa
                 self.reflectance_right = data.get('reflectance_right', self.reflectance_right)
                 self.imu_heading_deg = data.get('imu_heading_deg', self.imu_heading_deg)
                 if data.get('reset', False):
+                    print('Next episode')
                     pf.reset()
                     agent.reset_episode()
                 self.training = data.get('training', self.training)
+                self.sim_time = data.get('sim_time', time.time())
             except Exception:
                 pass
 
         def send_pose(self):
-            now = time.time()
+            now = self.sim_time
             if now - self.last_pf_report < 0.1:
                 return
             self.last_pf_report = now
@@ -208,7 +211,7 @@ while True:
             drivetrain.arcade(throttle, rotation)
         if is_simulation:
             virtual_robot.update_state()
-
+        now = virtual_robot.sim_time if is_simulation else time.time()
         left_ticks = left_motor.get_position_counts()
         right_ticks = right_motor.get_position_counts()
         distance_cm = rangefinder.distance()
@@ -221,8 +224,8 @@ while True:
         if is_simulation:
             virtual_robot.send_pose()
         if not next_action_time:
-            next_action_time = time.time()
-        if robot_mode != 'manual' and time.time() >= next_action_time and (
+            next_action_time = now
+        if robot_mode != 'manual' and now >= next_action_time and (
                 robot_mode != 'train' or virtual_robot.training):
             state = agent.discretize(pose, distance_cm, refl_l, refl_r)
             reward = 0.0
@@ -237,10 +240,10 @@ while True:
             straight, turn = agent.command(action)
             drivetrain.arcade(straight, turn)
             agent.remember(state, action)
-            next_action_time = max(time.time(), next_action_time + 0.25)
-        if robot_mode == 'train' and time.time() - last_save > 30:
+            next_action_time = max(now, next_action_time + 0.25)
+        if robot_mode == 'train' and now - last_save > 30:
             agent.save(q_file)
-            last_save = time.time()
+            last_save = now
         if time.time() - last_print > 10:
             print(f'{robot_name} {left_ticks:8d} {right_ticks:8d} {distance_cm:7.1f} '
                   f'{refl_l:4.2f} {refl_r:4.2f} {heading:5.1f} '

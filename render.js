@@ -408,8 +408,8 @@ function sendBallState() {
 }
 function updateTrainingInfo(state) {
   const infoEl = document.getElementById('training-info');
-  if (state.run_number !== undefined && state.run_start_time) {
-    const elapsed = (Date.now() / 1000 - state.run_start_time).toFixed(1);
+  if (state.run_number !== undefined && state.sim_time) {
+    const elapsed = (state.sim_time - state.sim_start).toFixed(1);
     infoEl.textContent = `Run: ${state.run_number}, Time: ${elapsed}s`;
   }
 }
