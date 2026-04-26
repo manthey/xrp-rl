@@ -64,9 +64,9 @@ def reset_episode():
         base_x = (-1 if team == 'red' else 1) * FIELD_LENGTH_MM * 3 / 8
         base_heading = 0 if team == 'red' else 180
         offset = 0 if random.random() >= 0.5 else 1
-        for index, robot_id in enumerate(robot_ids):
+        for index, robot in enumerate([robots[id] for id in robot_ids]):
             heading = (base_heading + random.gauss(0, 5)) % 360
-            robots[robot_id].update({
+            robot.update({
                 'world_x_mm': random.gauss(base_x, 100),
                 'world_y_mm': random.gauss(
                     (1 if (index + offset) % 2 == 0 else -1) * FIELD_WIDTH_MM / 4, 100),
