@@ -420,7 +420,8 @@ def update_rewards(dt):
     scored_team = scored_goal_team()
     over_time = sim_state['run_start_time'] and (
                 time.time() - sim_state['run_start_time'] > EPISODE_MAXIMUM_TIME)
-    if over_time or (scored_team is not None and scored_team != reward_memory.get('scored_team')):
+    if not sim_state['episode_finished'] and (over_time or (
+            scored_team is not None and scored_team != reward_memory.get('scored_team'))):
         sim_state['episode_finished'] = True
         sim_state['restart'] = time.time() + EPISODE_RESTART_DELAY_SEC
         for robot in robots.values():
