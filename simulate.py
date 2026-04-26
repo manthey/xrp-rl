@@ -447,6 +447,7 @@ def update_rewards(dt):
                 'ball_x': bx,
                 'ball_y': by,
                 'dist_to_ball': dist_to_ball,
+                'start_time': time.time(),
             }
             robot_rewards.setdefault(rid, {'reward': 0.0, 'terminal': False})
             continue
@@ -464,6 +465,9 @@ def update_rewards(dt):
         if new_goal:
             terminal = True
             reward += 100.0 if scored_team == team else -100.0
+        elif time.time() - reward_memory[rid]['start_timr'] > 300:
+            terminal = True
+            reward -= 50
 
         entry = robot_rewards.setdefault(rid, {'reward': 0.0, 'terminal': False})
         entry['reward'] += reward
