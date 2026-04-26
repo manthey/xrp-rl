@@ -220,6 +220,8 @@ while True:
         pose = pf.get_pose_with_error()
         if is_simulation:
             virtual_robot.send_pose()
+        if not next_action_time:
+            next_action_time = time.time()
         if robot_mode != 'manual' and time.time() >= next_action_time and (
                 robot_mode != 'train' or virtual_robot.training):
             state = agent.discretize(pose, distance_cm, refl_l, refl_r)
@@ -235,7 +237,7 @@ while True:
             straight, turn = agent.command(action)
             drivetrain.arcade(straight, turn)
             agent.remember(state, action)
-            next_action_time = time.time() + 0.25
+            next_action_time = max(time.time(), next_action_time + 0.25)
         if robot_mode == 'train' and time.time() - last_save > 30:
             agent.save(q_file)
             last_save = time.time()
