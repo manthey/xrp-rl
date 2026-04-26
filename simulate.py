@@ -71,7 +71,6 @@ def reset_episode():
                 'world_y_mm': random.gauss(
                     (1 if (index + offset) % 2 == 0 else -1) * FIELD_WIDTH_MM / 4, 100),
                 'world_heading_deg': heading,
-                'imu_heading_deg': heading,
                 'left_encoder': 0.0,
                 'right_encoder': 0.0,
                 'cmd_vel_left': 0.0,
@@ -79,6 +78,8 @@ def reset_episode():
                 'distance_cm': 65535.0,
                 'training': sim_state['training'],
                 'reset': True})
+            robot.pop('imu_state', None)
+            generate_imu_reading(robot)
 
 
 class RobotPose:
@@ -645,7 +646,8 @@ async def override_pose(override: PoseOverride):
     robots[robot_id]['world_x_mm'] = override.world_x_mm
     robots[robot_id]['world_y_mm'] = override.world_y_mm
     robots[robot_id]['world_heading_deg'] = override.world_heading_deg
-    robots[robot_id]['imu_heading_deg'] = override.world_heading_deg
+    robots[robot_id].pop('imu_state', None)
+    generate_imu_reading(robots[robot_id])
     constrain_robot_to_field(robots[robot_id])
     resolve_robot_overlaps()
     await broadcast({'type': 'pose_override', 'data': override.model_dump()})
