@@ -51,7 +51,7 @@ robot_rewards: dict[str, dict] = {}
 reward_memory: dict[str, dict] = {}
 sim_state = {'training': False, 'episode_finished': False, 'restart': None,
              'run_number': 0, 'run_start_time': None, 'sim_time': 0.0,
-             'sim_start': 0.0, 'fast': False}
+             'synced_robots': set(), 'sim_start': 0.0, 'fast': False}
 pending_broadcasts: dict[tuple, dict] = {}
 
 
@@ -523,9 +523,14 @@ async def simulation_loop():  # noqa
     next_time = time.time()
     last_training_broadcast = 0.0
     while True:
+        virtual_ids = {rid for rid, rob in robots.items() if rob.get('virtual')}
+        if virtual_ids and sim_state['fast']:
+            while not virtual_ids.issubset(sim_state['synced_robots']):
+                await asyncio.sleep(0.001)
         wait = 0 if sim_state['fast'] else max(0.001, next_time - time.time())
         next_time += dt
         sim_state['sim_time'] += dt
+        sim_state['synced_robots'].clear()
         if wait > 0:
             await asyncio.sleep(wait)
         else:
@@ -762,6 +767,7 @@ async def get_robots():
 @app.get('/robot')
 async def get_robot(robot_id: str):
     robot = robots[robot_id]
+    sim_state['synced_robots'].add(robot_id)
     data = dict(robot)
     data['reset'] = bool(robot.pop('reset', False))
     data['sim_start'] = sim_state['sim_start']

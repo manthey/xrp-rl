@@ -54,6 +54,8 @@ if is_simulation:  # noqa
             self.last_pf_report = 0
             self.sim_time = 0.0
             self.training = False
+            self.episodes = [0, 0, 0]
+            self.terminal_reward = None
 
             self.session.post(
                 f'{self.url}/pose_override',
@@ -80,7 +82,12 @@ if is_simulation:  # noqa
                 self.reflectance_right = data.get('reflectance_right', self.reflectance_right)
                 self.imu_heading_deg = data.get('imu_heading_deg', self.imu_heading_deg)
                 if data.get('reset', False):
-                    print('Next episode')
+                    if self.terminal_reward is not None:
+                        self.episodes[1 if self.terminal_reward > 0 else 2] += 1
+                    self.terminal_reward = None
+                    print(f'Episodes {self.episodes[0]}. '
+                          f'W {self.episodes[1]}, L {self.episodes[2]}')
+                    self.episodes[0] += 1
                     pf.reset()
                     agent.reset_episode()
                 self.training = data.get('training', self.training)
@@ -109,7 +116,11 @@ if is_simulation:  # noqa
             try:
                 data = self.session.get(
                     f'{self.url}/reward?robot_id={self.robot_id}').json()
-                return float(data.get('reward', 0.0)), bool(data.get('terminal', False))
+                reward = float(data.get('reward', 0.0))
+                terminal = bool(data.get('terminal', False))
+                if terminal:
+                    self.terminal_reward = reward
+                return reward, terminal
             except Exception:
                 return 0.0, False
 
