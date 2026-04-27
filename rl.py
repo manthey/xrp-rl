@@ -28,26 +28,13 @@ class QAgent:
         try:
             with open(path) as f:
                 data = json.load(f)
-            names = data.get('actions')
-            if names:
-                loaded = []
-                for name in names:
-                    for action in self.actions:
-                        if action[0] == name:
-                            loaded.append(action)
-                            break
-                if len(loaded) == len(names):
-                    self.actions = loaded
-            table = data.get('q', {})
-            self.q = {}
-            for state, values in table.items():
-                self.q[state] = [float(v) for v in values]
+            self.q = data.get('q', {})
         except Exception:
             self.q = {}
 
     def save(self, path):
         data = {
-            'actions': [a[0] for a in self.actions],
+            'actions': [list(a) for a in self.actions],
             'q': self.q,
         }
         try:
@@ -58,8 +45,7 @@ class QAgent:
             return False
 
     def command(self, action_index):
-        action = self.actions[action_index]
-        return action[1], action[2]
+        return tuple(self.actions[action_index][1:])
 
     def reset_episode(self):
         self.last_state = None
@@ -85,21 +71,13 @@ class QAgent:
         if self.epsilon > 0 and random.random() < self.epsilon:
             return int(random.random() * len(self.actions))
         best_value = max(row)
-        best = []
-        for i, value in enumerate(row):
-            if value == best_value:
-                best.append(i)
+        best = [i for i, value in enumerate(row) if value == best_value]
         return best[int(random.random() * len(best))]
 
     def row(self, state):
         values = self.q.get(state)
         if values is None:
             values = [0.0] * len(self.actions)
-            self.q[state] = values
-        if len(values) < len(self.actions):
-            values.extend([0.0] * (len(self.actions) - len(values)))
-        elif len(values) > len(self.actions):
-            values = values[:len(self.actions)]
             self.q[state] = values
         return values
 
@@ -110,68 +88,45 @@ class QAgent:
         std_x = float(pose.get('std_x_mm', 999.0))
         std_y = float(pose.get('std_y_mm', 999.0))
         std_heading = float(pose.get('std_heading_deg', 999.0))
-
         if self.team == 'blue':
             x = -x
             y = -y
             heading = (180.0 + heading) % 360.0
-
-        x_bin = self.bin_value(x, -FIELD_LENGTH_MM / 2, FIELD_LENGTH_MM / 2, 10)
-        y_bin = self.bin_value(y, -FIELD_WIDTH_MM / 2, FIELD_WIDTH_MM / 2, 6)
+        x_bin = self.bin_value(x, -FIELD_LENGTH_MM / 2, FIELD_LENGTH_MM / 2, 15)
+        y_bin = self.bin_value(y, -FIELD_WIDTH_MM / 2, FIELD_WIDTH_MM / 2, 7)
         heading_bin = self.bin_value(((heading + 22.5) % 360.0), 0, 360, 8)
-
         distance_bin = self.distance_bin(distance_cm)
-        tape_bin = self.tape_bin(reflectance_left, reflectance_right)
         confidence_bin = self.confidence_bin(std_x, std_y, std_heading)
-
-        return '%d,%d,%d,%d,%d,%d' % (
+        return '%d,%d,%d,%d,%d' % (
             x_bin,
             y_bin,
             heading_bin,
             distance_bin,
-            tape_bin,
             confidence_bin,
         )
 
     def bin_value(self, value, low, high, count):
-        if value <= low:
-            return 0
-        if value >= high:
-            return count - 1
-        return int((value - low) * count / (high - low))
+        return min(max(0, int((value - low) * count / (high - low))), count - 1)
 
     def distance_bin(self, distance_cm):
         try:
             d = float(distance_cm)
         except Exception:
-            return 5
-        if d < 8:
-            return 0
-        if d < 15:
-            return 1
-        if d < 30:
-            return 2
-        if d < 60:
-            return 3
-        if d < 100:
             return 4
-        return 5
-
-    def tape_bin(self, left, right):
-        left_on = float(left) < 0.45
-        right_on = float(right) < 0.45
-        if left_on and right_on:
-            return 3
-        if left_on:
+        if d < 12.5:
+            return 0
+        if d < 25:
             return 1
-        if right_on:
+        if d < 50:
             return 2
-        return 0
+        if d < 100:
+            return 3
+        return 4
 
     def confidence_bin(self, std_x, std_y, std_heading):
         position_std = max(std_x, std_y)
         if position_std < 100 and std_heading < 8:
             return 0
-        if position_std < 220 and std_heading < 18:
+        if position_std < 200 and std_heading < 16:
             return 1
         return 2

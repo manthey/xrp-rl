@@ -320,7 +320,6 @@ function drawRobots() {
     ctx.restore();
 
     if (estimatedPoses[id]) {
-      console.log(estimatedPoses[id]); // DWM::
       drawEstimatedPose(ctx, estimatedPoses[id]);
     }
 

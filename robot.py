@@ -247,14 +247,15 @@ while True:
             if terminal:
                 agent.reset_episode()
                 agent.save(q_file)
+                last_save = time.time()
             action = agent.choose_action(state)
             straight, turn = agent.command(action)
             drivetrain.arcade(straight, turn)
             agent.remember(state, action)
             next_action_time = max(now, next_action_time + 0.25)
-        if robot_mode == 'train' and now - last_save > 30:
+        if robot_mode == 'train' and time.time() - last_save > 30:
             agent.save(q_file)
-            last_save = now
+            last_save = time.time()
         if time.time() - last_print > 10:
             print(f'{robot_name} {left_ticks:8d} {right_ticks:8d} {distance_cm:7.1f} '
                   f'{refl_l:4.2f} {refl_r:4.2f} {heading:5.1f} '
