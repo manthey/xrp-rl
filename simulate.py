@@ -37,6 +37,7 @@ RESTITUTION = 0.7
 SIM_HZ = 60
 EPISODE_RESTART_DELAY_SEC = 1.0
 EPISODE_MAXIMUM_TIME = 300.0
+BROADCAST_HZ = 60
 
 ball_state: dict = {
     'world_x_mm': 0.0,
@@ -51,6 +52,7 @@ reward_memory: dict[str, dict] = {}
 sim_state = {'training': False, 'episode_finished': False, 'restart': None,
              'run_number': 0, 'run_start_time': None, 'sim_time': 0.0,
              'sim_start': 0.0, 'fast': False}
+pending_broadcasts: dict[tuple, dict] = {}
 
 
 def reset_episode():
@@ -479,20 +481,59 @@ def update_rewards(dt):
         prev['dist_to_ball'] = dist_to_ball
 
 
+def broadcast_key(message: dict) -> tuple:
+    msg_type = message.get('type', '')
+    data = message.get('data')
+    robot_id = data.get('robot_id') if isinstance(data, dict) else None
+    return (msg_type, robot_id)
+
+
+def enqueue_broadcast(message: dict):
+    pending_broadcasts[broadcast_key(message)] = message
+
+
+async def flush_broadcasts():
+    if not pending_broadcasts or not websocket_clients:
+        pending_broadcasts.clear()
+        return
+    messages = list(pending_broadcasts.values())
+    pending_broadcasts.clear()
+    disconnected = []
+    for ws in websocket_clients:
+        try:
+            for msg in messages:
+                await asyncio.wait_for(ws.send_json(msg), timeout=0.5)
+        except Exception:
+            disconnected.append(ws)
+    for ws in set(disconnected):
+        try:
+            websocket_clients.remove(ws)
+        except ValueError:
+            pass
+
+
+async def broadcast_loop():
+    while True:
+        await asyncio.sleep(1.0 / BROADCAST_HZ)
+        await flush_broadcasts()
+
+
 async def simulation_loop():  # noqa
     dt = 1.0 / SIM_HZ
     next_time = time.time()
     last_training_broadcast = 0.0
     while True:
-        wait = 0.0001 if sim_state['fast'] else max(0.001, next_time - time.time())
+        wait = 0 if sim_state['fast'] else max(0.001, next_time - time.time())
         next_time += dt
         sim_state['sim_time'] += dt
         if wait > 0:
             await asyncio.sleep(wait)
+        else:
+            await asyncio.sleep(0)
         if sim_state['training'] and sim_state['restart'] is not None:
             if sim_state['sim_time'] >= sim_state['restart']:
                 reset_episode()
-                await broadcast({
+                enqueue_broadcast({
                     'type': 'training_state',
                     'data': {
                         'training': sim_state['training'],
@@ -539,12 +580,12 @@ async def simulation_loop():  # noqa
             rid: dict(rob) for rid, rob in robots.items() if rob.get('virtual')
         }
         if virtual_updates:
-            await broadcast({'type': 'virtual_robots', 'data': virtual_updates})
-        await broadcast({'type': 'ball', 'data': dict(ball_state)})
+            enqueue_broadcast({'type': 'virtual_robots', 'data': virtual_updates})
+        enqueue_broadcast({'type': 'ball', 'data': dict(ball_state)})
         now = time.time()
         if sim_state['training'] and now - last_training_broadcast >= 10.0:
             last_training_broadcast = now
-            await broadcast({
+            enqueue_broadcast({
                 'type': 'training_state',
                 'data': {
                     'training': sim_state['training'],
@@ -558,13 +599,16 @@ async def simulation_loop():  # noqa
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    task = asyncio.create_task(simulation_loop())
+    sim_task = asyncio.create_task(simulation_loop())
+    bcast_task = asyncio.create_task(broadcast_loop())
     yield
-    task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
+    sim_task.cancel()
+    bcast_task.cancel()
+    for task in (sim_task, bcast_task):
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(lifespan=lifespan)
@@ -637,14 +681,14 @@ async def receive_telemetry(telemetry: Telemetry):
     if telemetry.robot_id not in robots:
         robots[telemetry.robot_id] = {}
     robots[telemetry.robot_id].update(data)
-    await broadcast({'type': 'telemetry', 'data': data})
+    enqueue_broadcast({'type': 'telemetry', 'data': data})
     return {'status': 'ok'}
 
 
 @app.post('/ball')
 async def update_ball(state: BallState):
     ball_state.update(state.model_dump())
-    await broadcast({'type': 'ball', 'data': dict(ball_state)})
+    enqueue_broadcast({'type': 'ball', 'data': dict(ball_state)})
     return {'status': 'ok'}
 
 
@@ -673,7 +717,7 @@ async def override_pose(override: PoseOverride):
     generate_imu_reading(robots[robot_id])
     constrain_robot_to_field(robots[robot_id])
     resolve_robot_overlaps()
-    await broadcast({'type': 'pose_override', 'data': override.model_dump()})
+    enqueue_broadcast({'type': 'pose_override', 'data': override.model_dump()})
     return {'status': 'ok'}
 
 
@@ -684,7 +728,7 @@ async def receive_estimated_pose(est: EstimatedPose):
         return {'status': 'error', 'message': 'unknown robot'}
     data = est.model_dump()
     robots[rid]['estimated_pose'] = data
-    await broadcast({'type': 'estimated_pose', 'data': data})
+    enqueue_broadcast({'type': 'estimated_pose', 'data': data})
     return {'status': 'ok'}
 
 
@@ -775,20 +819,6 @@ async def websocket_endpoint(ws: WebSocket):
     finally:
         if ws in websocket_clients:
             websocket_clients.remove(ws)
-
-
-async def broadcast(message: dict):
-    disconnected = []
-    for ws in websocket_clients:
-        try:
-            await asyncio.wait_for(ws.send_json(message), timeout=0.5)
-        except Exception:
-            disconnected.append(ws)
-    for ws in disconnected:
-        try:
-            websocket_clients.remove(ws)
-        except ValueError:
-            pass
 
 
 def build_html(config: dict) -> str:
