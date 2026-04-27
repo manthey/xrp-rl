@@ -51,10 +51,12 @@ def ray_line_intersect(rx, ry, dx, dy, x1, y1, x2, y2):
     denom = dx * ly - dy * lx
     if abs(denom) < 1e-10:
         return None
-    t = ((x1 - rx) * ly - (y1 - ry) * lx) / denom
-    s = ((x1 - rx) * dy - (y1 - ry) * dx) / denom
-    if t >= 0 and 0 <= s <= 1:
-        return t
+    t = (x1 - rx) * ly - (y1 - ry) * lx
+    if t < 0:
+        return None
+    s = (x1 - rx) * dy - (y1 - ry) * dx
+    if 0 <= s <= denom:
+        return t / denom
     return None
 
 
@@ -194,16 +196,20 @@ def point_in_field(px, py):
     half_len = FIELD_LENGTH_MM / 2
     half_wid = FIELD_WIDTH_MM / 2
     goal_half = GOAL_WIDTH_MM / 2
+    inner_x = half_len - CORNER_RADIUS_MM
+    inner_y = half_wid - CORNER_RADIUS_MM
+    if abs(py) > half_wid:
+        return False
+    if abs(px) < inner_x:
+        return True
+    if abs(py) < inner_y and abs(px) < half_len:
+        return True
     if abs(px) > half_len and abs(py) < goal_half:
         if abs(px) <= half_len + GOAL_DEPTH_MM:
             return True
         return False
-    if abs(py) > half_wid:
-        return False
     if abs(py) >= goal_half and abs(px) > half_len:
         return False
-    inner_x = half_len - CORNER_RADIUS_MM
-    inner_y = half_wid - CORNER_RADIUS_MM
     for ccx in (-inner_x, inner_x):
         for ccy in (-inner_y, inner_y):
             if (px - ccx) * ccx > 0 and (py - ccy) * ccy > 0:

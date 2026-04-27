@@ -260,8 +260,9 @@ while True:
                   f'{refl_l:4.2f} {refl_r:4.2f} {heading:5.1f} '
                   f'{pose["x_mm"]:7.1f} {pose["y_mm"]:6.1f} {pose["heading_deg"]:5.1f}')
             last_print = time.time()
-        batteryVoltage = (ADC(Pin('BOARD_VIN_MEASURE')).read_u16()) / (1024 * 64 / 14)
-        pestolink.telemetryPrintBatteryVoltage(batteryVoltage)
+        if not is_simulation:
+            batteryVoltage = (ADC(Pin('BOARD_VIN_MEASURE')).read_u16()) / (1024 * 64 / 14)
+            pestolink.telemetryPrintBatteryVoltage(batteryVoltage)
         # This won't really work -- pestolink only sends the first 8 characters
         # of any telemetry and only sends one piece of telemetry every 0.5 s,
         # so we will get different values at different times
