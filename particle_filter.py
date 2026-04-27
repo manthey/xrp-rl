@@ -11,6 +11,8 @@ NUM_PARTICLES = 100
 TAPE_THRESHOLD = 0.4
 DISTANCE_INVALID = 1000.0
 RESAMPLE_FRACTION = 0.5
+START_HEADING_SIGMA_DEG = 20.0
+IMU_RELATIVE_SIGMA_DEG = 25.0
 
 if hasattr(random, 'gauss'):
     gauss = random.gauss
@@ -25,12 +27,13 @@ else:
 
 
 class Particle:
-    __slots__ = ('x', 'y', 'heading', 'weight')
+    __slots__ = ('x', 'y', 'heading', 'weight', 'imu_offset')
 
-    def __init__(self, x, y, heading, weight=1.0):
+    def __init__(self, x, y, heading, imu_offset, weight=1.0):
         self.x = x
         self.y = y
         self.heading = heading
+        self.imu_offset = imu_offset
         self.weight = weight
 
 
@@ -68,7 +71,7 @@ class ParticleFilter:
         for _ in range(self.num_particles):
             x = random.uniform(x_min, x_max)
             y = random.uniform(y_min, y_max)
-            heading = (facing + gauss(0, 20)) % 360
+            heading = (facing + gauss(0, START_HEADING_SIGMA_DEG)) % 360
             self.particles.append(Particle(x, y, heading, 1.0 / self.num_particles))
 
     def predict(self, left_ticks, right_ticks, imu_deg):
@@ -76,6 +79,8 @@ class ParticleFilter:
             self.prev_left_ticks = left_ticks
             self.prev_right_ticks = right_ticks
             self.prev_imu_deg = imu_deg
+            for p in self.particles:
+                p.imu_offset = ((((p.heading - imu_deg) % 360) + 540) % 360) - 180
             return
         dl = (left_ticks - self.prev_left_ticks) * MM_PER_TICK
         dr = (right_ticks - self.prev_right_ticks) * MM_PER_TICK
@@ -83,7 +88,8 @@ class ParticleFilter:
         self.prev_right_ticks = right_ticks
         dist = (dl + dr) / 2.0
         d_heading_enc = math.degrees((dr - dl) / WHEEL_BASE_MM)
-        d_imu = ((imu_deg - self.prev_imu_deg + 540) % 360) - 180
+        d_imu = ((((imu_deg - self.prev_imu_deg) % 360) + 540) % 360) - 180
+
         self.prev_imu_deg = imu_deg
         d_heading = 0.9 * d_imu + 0.1 * d_heading_enc
         dist_noise = max(2.0, abs(dist) * 0.2)
@@ -157,6 +163,9 @@ class ParticleFilter:
                     w *= 0.05
                 elif not observed and exp_tape:
                     w *= 0.4
+            imu_heading = (self.prev_imu_deg + p.imu_offset) % 360
+            err = ((((p.heading - imu_heading) % 360) + 540) % 360) - 180
+            w *= math.exp(-0.5 * (err / IMU_RELATIVE_SIGMA_DEG) ** 2)
             p.weight = max(1e-9, w)
             total += p.weight
         if total > 0:
@@ -193,6 +202,7 @@ class ParticleFilter:
                 src.x + gauss(0, 5.0),
                 src.y + gauss(0, 5.0),
                 (src.heading + gauss(0, 1.0)) % 360,
+                src.imu_offset,
                 1.0 / n))
         best = max(self.particles, key=lambda p: p.weight)
         for _ in range(keep_random):
@@ -200,6 +210,7 @@ class ParticleFilter:
                 best.x + gauss(0, 50),
                 best.y + gauss(0, 50),
                 (best.heading + gauss(0, 10)) % 360,
+                best.imu_offset,
                 1.0 / n))
         self.particles = new_particles
 
