@@ -4,7 +4,7 @@ import random
 from util import FIELD_LENGTH_MM, FIELD_WIDTH_MM
 
 DEFAULT_ACTIONS = [
-    ('stop', 0.0, 0.0),
+    ('stop', 0.0, 0.0),  # must be 0-th action
     ('forward_slow', 0.5, 0.0),
     ('forward_fast', 1, 0.0),
     ('reverse_fast', -1, 0.0),
@@ -23,7 +23,7 @@ class QAgent:
         self.q = {}
         self.counts = {}
         self.last_state = None
-        self.last_action = None
+        self.last_action = 0
 
     def load(self, path):
         try:
@@ -53,14 +53,14 @@ class QAgent:
 
     def reset_episode(self):
         self.last_state = None
-        self.last_action = None
+        self.last_action = 0
 
     def remember(self, state, action):
         self.last_state = state
         self.last_action = action
 
     def learn_from_transition(self, next_state, reward, terminal=False):
-        if self.last_state is None or self.last_action is None:
+        if self.last_state is None:
             return
         row, counts = self.row(self.last_state)
         old_value = row[self.last_action]
@@ -85,7 +85,7 @@ class QAgent:
             self.counts[state] = [0] * len(self.actions)
         return self.q[state], self.counts[state]
 
-    def discretize(self, pose, distance_cm, reflectance_left, reflectance_right):
+    def discretize(self, pose, distance_cm, reflectance_left, reflectance_right, previous_action):
         x = float(pose.get('x_mm', 0.0))
         y = float(pose.get('y_mm', 0.0))
         heading = float(pose.get('heading_deg', 0.0))
@@ -101,12 +101,13 @@ class QAgent:
         heading_bin = self.bin_value(((heading + 22.5) % 360.0), 0, 360, 8)
         distance_bin = self.distance_bin(distance_cm)
         confidence_bin = self.confidence_bin(std_x, std_y, std_heading)
-        return '%d,%d,%d,%d,%d' % (
+        return '%d,%d,%d,%d,%d,%d' % (
             x_bin,
             y_bin,
             heading_bin,
             distance_bin,
             confidence_bin,
+            previous_action
         )
 
     def bin_value(self, value, low, high, count):

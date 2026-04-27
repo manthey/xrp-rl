@@ -238,7 +238,7 @@ while True:
             next_action_time = now
         if robot_mode != 'manual' and now >= next_action_time and (
                 robot_mode != 'train' or virtual_robot.training):
-            state = agent.discretize(pose, distance_cm, refl_l, refl_r)
+            state = agent.discretize(pose, distance_cm, refl_l, refl_r, agent.last_action)
             reward = 0.0
             terminal = False
             if is_simulation and robot_mode == 'train':
