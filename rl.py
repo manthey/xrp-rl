@@ -8,8 +8,8 @@ DEFAULT_ACTIONS = [
     ('forward_slow', 0.5, 0.0),
     ('forward_fast', 1, 0.0),
     ('reverse_fast', -1, 0.0),
-    ('turn_left', 0.0, 1),
-    ('turn_right', 0.0, -1),
+    ('turn_left', 0.0, -1),
+    ('turn_right', 0.0, 1),
 ]
 
 
@@ -21,6 +21,7 @@ class QAgent:
         self.gamma = gamma
         self.epsilon = epsilon
         self.q = {}
+        self.counts = {}
         self.last_state = None
         self.last_action = None
 
@@ -29,13 +30,16 @@ class QAgent:
             with open(path) as f:
                 data = json.load(f)
             self.q = data.get('q', {})
+            self.counts = data.get('counts', {})
         except Exception:
             self.q = {}
+            self.counts = {}
 
     def save(self, path):
         data = {
             'actions': [list(a) for a in self.actions],
             'q': self.q,
+            'counts': self.counts,
         }
         try:
             with open(path, 'w') as f:
@@ -58,16 +62,17 @@ class QAgent:
     def learn_from_transition(self, next_state, reward, terminal=False):
         if self.last_state is None or self.last_action is None:
             return
-        row = self.row(self.last_state)
+        row, counts = self.row(self.last_state)
         old_value = row[self.last_action]
         if terminal:
             target = reward
         else:
-            target = reward + self.gamma * max(self.row(next_state))
+            target = reward + self.gamma * max(self.row(next_state)[0])
         row[self.last_action] = old_value + self.alpha * (target - old_value)
+        counts[self.last_action] += 1
 
     def choose_action(self, state):
-        row = self.row(state)
+        row, _ = self.row(state)
         if self.epsilon > 0 and random.random() < self.epsilon:
             return int(random.random() * len(self.actions))
         best_value = max(row)
@@ -75,11 +80,10 @@ class QAgent:
         return best[int(random.random() * len(best))]
 
     def row(self, state):
-        values = self.q.get(state)
-        if values is None:
-            values = [0.0] * len(self.actions)
-            self.q[state] = values
-        return values
+        if state not in self.q:
+            self.q[state] = [0] * len(self.actions)
+            self.counts[state] = [0] * len(self.actions)
+        return self.q[state], self.counts[state]
 
     def discretize(self, pose, distance_cm, reflectance_left, reflectance_right):
         x = float(pose.get('x_mm', 0.0))
