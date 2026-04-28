@@ -9,7 +9,8 @@ from util import (FIELD_LENGTH_MM, FIELD_WIDTH_MM, MM_PER_TICK,
 
 NUM_PARTICLES = 100
 TAPE_THRESHOLD = 0.4
-DISTANCE_INVALID = 1000.0
+DISTANCE_INVALID = 6553.0
+DISTANCE_SHORT_OBSTACLE_LIKELIHOOD = 0.4
 RESAMPLE_FRACTION = 0.5
 START_HEADING_SIGMA_DEG = 20.0
 IMU_RELATIVE_SIGMA_DEG = 25.0
@@ -145,11 +146,15 @@ class ParticleFilter:
             exp_dist = self.expected_distance(p)
             if distance_valid:
                 if exp_dist is None or exp_dist > DISTANCE_INVALID:
-                    w *= 0.1
+                    w *= 0.3
                 else:
                     err = distance_mm - exp_dist
                     sigma = max(20.0, exp_dist * 0.05)
-                    w *= math.exp(-0.5 * (err / sigma) ** 2)
+                    wall_likelihood = math.exp(-0.5 * (err / sigma) ** 2)
+                    if distance_mm < exp_dist - 2 * sigma:
+                        w *= max(wall_likelihood, DISTANCE_SHORT_OBSTACLE_LIKELIHOOD)
+                    else:
+                        w *= max(wall_likelihood, 0.05)
             else:
                 if exp_dist is not None and exp_dist < 800:
                     w *= 0.3

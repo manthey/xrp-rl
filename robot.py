@@ -1,3 +1,10 @@
+#!/usr/bin/env python3
+# /// script
+# dependencies = [
+#   "requests",
+# ]
+# ///
+
 import math
 import os
 import time
