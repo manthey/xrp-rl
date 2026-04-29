@@ -65,7 +65,7 @@ if is_simulation:  # noqa
             self.sim_time = 0.0
             self.sim_start = 0.0
             self.training = False
-            self.episodes = [0, 0, 0]
+            self.episodes = [0, 0, 0, []]
             self.terminal_reward = None
             self.reward_total = 0.0
             self.last_reward_total = 0.0
@@ -151,9 +151,13 @@ if is_simulation:  # noqa
                 if data.get('reset', False):
                     if self.terminal_reward is not None:
                         self.episodes[1 if self.terminal_reward > 0 else 2] += 1
+                        self.episodes[3].append(1 if self.terminal_reward > 0 else -1)
+                    else:
+                        self.episodes[3].append(0)
                     print(
                         f'{robot_name}  episodes {self.episodes[0]}, '
-                        f'W {self.episodes[1]}, L {self.episodes[2]}')
+                        f'W {self.episodes[1]}, L {self.episodes[2]}, '
+                        f'RP100 {sum(self.episodes[3][-100:]) / len(self.episodes[3][-100:]):4.2f}')
                     self.episodes[0] += 1
                     self.terminal_reward = None
                     self.reward_total = 0.0
@@ -166,11 +170,6 @@ if is_simulation:  # noqa
                         self.last_reward_total = 0.0
                     self.reward_total = reward_total
                 return
-
-        def consume_reset(self):
-            reset = self.reset
-            self.reset = False
-            return reset
 
         def sync(self):
             self.send({'type': 'sync', 'robot_id': self.robot_id})
@@ -211,9 +210,6 @@ if is_simulation:  # noqa
                 'turn': command[1],
             }):
                 self.last_command = command
-
-        def save_policy(self, path, agent):
-            agent.save(path)
 
     virtual_robot = VirtualRobot(args.simulator, args.robot_id)
 
@@ -297,7 +293,8 @@ while True:
     if pestolink.is_connected():
         if is_simulation:
             virtual_robot.wait_state()
-            if virtual_robot.consume_reset():
+            if virtual_robot.reset:
+                virtual_robot.reset = False
                 pf.reset()
                 agent.reset_episode()
         if robot_mode == 'manual':
@@ -327,8 +324,9 @@ while True:
             agent.learn_from_transition(state, reward, terminal)
             if terminal:
                 agent.reset_episode()
-                agent.save(q_file)
-                last_save = time.time()
+                if robot_mode == 'train' and time.time() - last_save > 10:
+                    agent.save(q_file)
+                    last_save = time.time()
             action = agent.choose_action(state)
             straight, turn = agent.command(action)
             drivetrain.arcade(straight, turn)

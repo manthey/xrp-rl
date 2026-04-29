@@ -636,7 +636,7 @@ async def simulation_loop():  # noqa
         if sim_state['fast']:
             dur = time.time() - last_report
             if dur > 10:
-                print(f'{report_frames / dur:3.1f} Hz ({report_frames / dur / SIM_HZ:5.2f}x)')
+                print(f'{report_frames / dur:3.1f} Hz ({report_frames / dur / SIM_HZ:4.2f}x)')
                 report_frames = 0
                 last_report = time.time()
             report_frames += 1
