@@ -577,7 +577,9 @@ def update_rewards(dt):
         terminal = False
         if new_goal:
             terminal = True
-            reward += 100.0 if scored_team == team else -100.0
+            elapsed = sim_state['sim_time'] - sim_state['sim_start']
+            win_score = 100 + 50 * (1 - min(1, elapsed / EPISODE_MAXIMUM_TIME))
+            reward += (1 if scored_team == team else -1) * win_score
         entry = robot_rewards.setdefault(robot_id, {'reward': 0.0, 'terminal_id': 0})
         entry['reward'] += reward
         if terminal:
