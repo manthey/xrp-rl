@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # dependencies = [
-#   "requests",
+#   "websocket-client",
 # ]
 # ///
 
@@ -20,8 +20,11 @@ try:
     is_simulation = False
 except ImportError:
     import argparse
+    import json
+    from urllib.parse import urlparse
 
-    import requests
+    from websocket import WebSocketTimeoutException, create_connection
+
     is_simulation = True
 
 if is_simulation:  # noqa
@@ -47,89 +50,167 @@ if is_simulation:  # noqa
 
     class VirtualRobot:
         def __init__(self, url, robot_id):
-            self.url = url
             self.robot_id = robot_id
+            self.team = args.team
+            self.pos = args.pos
+            self.ws_url = self.build_ws_url(url)
+            self.ws = None
             self.left_encoder = 0
             self.right_encoder = 0
             self.distance_cm = 65535.0
             self.reflectance_left = 1.0
             self.reflectance_right = 1.0
             self.imu_heading_deg = 0.0
-            self.team = args.team
-            self.pos = args.pos
-            self.session = requests.Session()
-            self.last_pf_report = 0
+            self.last_pf_report = 0.0
             self.sim_time = 0.0
+            self.sim_start = 0.0
             self.training = False
             self.episodes = [0, 0, 0]
             self.terminal_reward = None
+            self.reward_total = 0.0
+            self.last_reward_total = 0.0
+            self.terminal_id = 0
+            self.pending_terminal = False
+            self.reset = False
+            self.last_command = None
 
-            self.session.post(
-                f'{self.url}/pose_override',
-                json={
-                    'robot_id': self.robot_id,
-                    'world_x_mm': -900 if self.team == 'red' else 900,
-                    'world_y_mm': 300 if self.pos == 'high' else -300,
-                    'world_heading_deg': 0 if self.team == 'red' else 180,
-                })
-            self.session.post(
-                f'{self.url}/team',
-                json={
-                    'robot_id': self.robot_id,
-                    'team': self.team,
-                })
+        def build_ws_url(self, url):
+            parsed = urlparse(url)
+            scheme = parsed.scheme if parsed.scheme in ('ws', 'wss') else (
+                'wss' if parsed.scheme == 'https' else 'ws')
+            path = parsed.path.rstrip('/')
+            return f'{scheme}://{parsed.netloc}{path}/robot_ws'
 
-        def update_state(self):
+        def close(self):
+            ws = self.ws
+            self.ws = None
+            if ws is not None:
+                try:
+                    ws.close()
+                except Exception:
+                    pass
+
+        def connect(self):
+            while self.ws is None:
+                try:
+                    self.ws = create_connection(self.ws_url, timeout=2)
+                    self.ws.settimeout(2)
+                    self.ws.send(json.dumps({
+                        'type': 'hello',
+                        'robot_id': self.robot_id,
+                        'team': self.team,
+                        'pos': self.pos,
+                    }))
+                    self.last_command = None
+                except Exception:
+                    self.close()
+                    time.sleep(0.5)
+
+        def send(self, message):
+            if self.ws is None:
+                return False
             try:
-                data = self.session.get(f'{self.url}/robot?robot_id={self.robot_id}').json()
+                self.ws.send(json.dumps(message))
+                return True
+            except Exception:
+                self.close()
+                return False
+
+        def wait_state(self):
+            while True:
+                if self.ws is None:
+                    self.connect()
+                try:
+                    raw = self.ws.recv()
+                except WebSocketTimeoutException:
+                    continue
+                except Exception:
+                    self.close()
+                    continue
+                try:
+                    msg = json.loads(raw)
+                except Exception:
+                    continue
+                if msg.get('type') != 'robot_state':
+                    continue
+                data = msg.get('data', {})
                 self.left_encoder = int(math.floor(data.get('left_encoder', self.left_encoder)))
                 self.right_encoder = int(math.floor(data.get('right_encoder', self.right_encoder)))
                 self.distance_cm = data.get('distance_cm', self.distance_cm)
                 self.reflectance_left = data.get('reflectance_left', self.reflectance_left)
                 self.reflectance_right = data.get('reflectance_right', self.reflectance_right)
                 self.imu_heading_deg = data.get('imu_heading_deg', self.imu_heading_deg)
+                self.training = data.get('training', self.training)
+                self.sim_start = data.get('sim_start', self.sim_start)
+                self.sim_time = data.get('sim_time', self.sim_time or time.time())
+                reward_total = float(data.get('reward_total', self.reward_total))
+                terminal_id = int(data.get('terminal_id', self.terminal_id))
+                if terminal_id != self.terminal_id:
+                    self.terminal_id = terminal_id
+                    self.pending_terminal = True
                 if data.get('reset', False):
                     if self.terminal_reward is not None:
                         self.episodes[1 if self.terminal_reward > 0 else 2] += 1
-                    self.terminal_reward = None
-                    print(f'Episodes {self.episodes[0]}. '
-                          f'W {self.episodes[1]}, L {self.episodes[2]}')
+                    print(
+                        f'{robot_name}  episodes {self.episodes[0]}, '
+                        f'W {self.episodes[1]}, L {self.episodes[2]}')
                     self.episodes[0] += 1
-                    pf.reset()
-                    agent.reset_episode()
-                self.training = data.get('training', self.training)
-                self.sim_time = data.get('sim_time', time.time())
-            except Exception:
-                pass
-
-        def send_pose(self):
-            now = self.sim_time
-            if now - self.last_pf_report < 0.1:
+                    self.terminal_reward = None
+                    self.reward_total = 0.0
+                    self.last_reward_total = 0.0
+                    self.terminal_id = 0
+                    self.pending_terminal = False
+                    self.reset = True
+                else:
+                    if reward_total < self.reward_total:
+                        self.last_reward_total = 0.0
+                    self.reward_total = reward_total
                 return
-            self.last_pf_report = now
-            virtual_robot.session.post(
-                f'{virtual_robot.url}/estimated_pose',
-                json={
-                    'robot_id': virtual_robot.robot_id,
-                    'x_mm': pose['x_mm'],
-                    'y_mm': pose['y_mm'],
-                    'heading_deg': pose['heading_deg'],
-                    'std_x_mm': pose['std_x_mm'],
-                    'std_y_mm': pose['std_y_mm'],
-                    'std_heading_deg': pose['std_heading_deg'],
-                })
+
+        def consume_reset(self):
+            reset = self.reset
+            self.reset = False
+            return reset
+
+        def sync(self):
+            self.send({'type': 'sync', 'robot_id': self.robot_id})
+
+        def send_pose(self, pose):
+            now = self.sim_time
+            if now - self.last_pf_report < 0.25:
+                return
+            data = {
+                'robot_id': self.robot_id,
+                'x_mm': round(pose['x_mm'], 1),
+                'y_mm': round(pose['y_mm'], 1),
+                'heading_deg': round(pose['heading_deg'], 1),
+                'std_x_mm': round(pose['std_x_mm'], 1),
+                'std_y_mm': round(pose['std_y_mm'], 1),
+                'std_heading_deg': round(pose['std_heading_deg'], 1),
+            }
+            if self.send({'type': 'estimated_pose', 'data': data}):
+                self.last_pf_report = now
 
         def get_reward(self):
-            try:
-                data = self.session.get(
-                    f'{self.url}/reward?robot_id={self.robot_id}').json()
-                reward = float(data.get('reward', 0.0))
-                terminal = bool(data.get('terminal', False))
-                if terminal:
-                    self.terminal_reward = reward
-                return reward, terminal
-            except Exception:
-                return 0.0, False
+            reward = self.reward_total - self.last_reward_total
+            self.last_reward_total = self.reward_total
+            terminal = self.pending_terminal
+            self.pending_terminal = False
+            if terminal:
+                self.terminal_reward = reward
+            return reward, terminal
+
+        def arcade(self, straight, turn):
+            command = (round(straight, 4), round(turn, 4))
+            if command == self.last_command:
+                return
+            if self.send({
+                'type': 'arcade',
+                'robot_id': self.robot_id,
+                'straight': command[0],
+                'turn': command[1],
+            }):
+                self.last_command = command
 
         def save_policy(self, path, agent):
             agent.save(path)
@@ -154,22 +235,14 @@ if is_simulation:  # noqa
 
     class MockDrivetrain:
         def arcade(self, straight, turn):
-            virtual_robot.session.post(
-                f'{virtual_robot.url}/arcade',
-                json={
-                    'robot_id': virtual_robot.robot_id,
-                    'straight': straight,
-                    'turn': turn
-                })
+            virtual_robot.arcade(straight, turn)
 
     class MockMotor:
         def __init__(self, is_left):
             self.is_left = is_left
 
         def get_position_counts(self):
-            if self.is_left:
-                return virtual_robot.left_encoder
-            return virtual_robot.right_encoder
+            return virtual_robot.left_encoder if self.is_left else virtual_robot.right_encoder
 
     class MockRangefinder:
         def distance(self):
@@ -189,11 +262,11 @@ if is_simulation:  # noqa
         def get_heading(self):
             return virtual_robot.imu_heading_deg
 
-    class MockBoard():
+    class MockBoard:
         imu = MockIMU()
 
     Pin = MockPin  # noqa
-    ADC = MockADC  # noqa
+    ADC = MockADC   # noqa
     PestoLinkAgent = MockPestoLink  # noqa
     drivetrain = MockDrivetrain()  # noqa
     left_motor = MockMotor(True)  # noqa
@@ -213,22 +286,24 @@ else:
     board.imu.calibrate()
 
 pestolink = PestoLinkAgent(robot_name)
-
 pf = particle_filter.ParticleFilter(team=robot_team)
 agent = rl.QAgent(team=robot_team, epsilon=0.15 if robot_mode == 'train' else 0.0)
 agent.load(q_file)
 last_save = time.time()
-next_action_time = 0
-last_print = 0
+next_action_time = 0.0
+last_print = 0.0
 
 while True:
     if pestolink.is_connected():
+        if is_simulation:
+            virtual_robot.wait_state()
+            if virtual_robot.consume_reset():
+                pf.reset()
+                agent.reset_episode()
         if robot_mode == 'manual':
             rotation = -1 * pestolink.get_axis(2)
             throttle = -1 * pestolink.get_axis(1)
             drivetrain.arcade(throttle, rotation)
-        if is_simulation:
-            virtual_robot.update_state()
         now = virtual_robot.sim_time if is_simulation else time.time()
         left_ticks = left_motor.get_position_counts()
         right_ticks = right_motor.get_position_counts()
@@ -236,11 +311,10 @@ while True:
         refl_l = reflectance.get_left()
         refl_r = reflectance.get_right()
         heading = board.imu.get_heading()
-
         pf.step(left_ticks, right_ticks, distance_cm, refl_l, refl_r, heading)
         pose = pf.get_pose_with_error()
         if is_simulation:
-            virtual_robot.send_pose()
+            virtual_robot.send_pose(pose)
         if not next_action_time:
             next_action_time = now
         if robot_mode != 'manual' and now >= next_action_time and (
@@ -268,17 +342,10 @@ while True:
                   f'{refl_l:4.2f} {refl_r:4.2f} {heading:5.1f} '
                   f'{pose["x_mm"]:7.1f} {pose["y_mm"]:6.1f} {pose["heading_deg"]:5.1f}')
             last_print = time.time()
-        if not is_simulation:
-            batteryVoltage = (ADC(Pin('BOARD_VIN_MEASURE')).read_u16()) / (1024 * 64 / 14)
-            pestolink.telemetryPrintBatteryVoltage(batteryVoltage)
-        # This won't really work -- pestolink only sends the first 8 characters
-        # of any telemetry and only sends one piece of telemetry every 0.5 s,
-        # so we will get different values at different times
-        # pestolink.telemetryPrint(str(left_ticks), '000000')
-        # pestolink.telemetryPrint(str(right_ticks), '000000')
-        # pestolink.telemetryPrint(str(distance_cm), '000000')
-        # pestolink.telemetryPrint(str(refl_l), '000000')
-        # pestolink.telemetryPrint(str(refl_r), '000000')
-        # pestolink.telemetryPrint(str(heading()), '000000')
-    else:  # default behavior when no BLE connection is open
+        if is_simulation:
+            virtual_robot.sync()
+        else:
+            battery_voltage = ADC(Pin('BOARD_VIN_MEASURE')).read_u16() / (1024 * 64 / 14)
+            pestolink.telemetryPrintBatteryVoltage(battery_voltage)
+    else:
         drivetrain.arcade(0, 0)
