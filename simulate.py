@@ -3,8 +3,9 @@
 # requires-python = ">=3.11"
 # dependencies = [
 #   "fastapi",
-#   "uvicorn[standard]",
 #   "pydantic",
+#   "uvicorn",
+#   "websockets",
 # ]
 # ///
 
@@ -624,7 +625,16 @@ async def simulation_loop():  # noqa
     dt = 1.0 / SIM_HZ
     next_time = time.time()
     last_training_broadcast = 0.0
+    last_report = time.time()
+    report_frames = 0
     while True:
+        if sim_state['fast']:
+            dur = time.time() - last_report
+            if dur > 10:
+                print(f'{report_frames / dur:3.1f} Hz ({report_frames / dur / SIM_HZ:5.2f}x)')
+                report_frames = 0
+                last_report = time.time()
+            report_frames += 1
         synced = connected_virtual_ids()
         if synced and sim_state['fast']:
             while not synced.issubset(sim_state['synced_robots']):
