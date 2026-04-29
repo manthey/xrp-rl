@@ -570,7 +570,10 @@ def update_rewards(dt):
         reward += 0.0010 * approach
         reward += 0.0005 * direction * vx * dt
         if dist_to_ball < 170:
-            reward += 0.01 * dt
+            if (rx - bx) * direction < 0:
+                reward += 0.02 * dt
+            else:
+                reward += 0.005 * dt
         terminal = False
         if new_goal:
             terminal = True
