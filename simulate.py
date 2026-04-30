@@ -23,11 +23,12 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from util import (BALL_RADIUS_MM, CORNER_BEVEL, CORNER_MEET, CORNER_RADIUS_MM,
-                  FIELD_CONFIG, FIELD_LENGTH_MM, FIELD_WIDTH_MM, GOAL_DEPTH_MM,
-                  GOAL_WIDTH_MM, MAX_WHEEL_SPEED_MMPS, MM_PER_TICK,
-                  ROBOT_CORNER_RADIUS_MM, ROBOT_DISTANCE_SENSOR_OFFSET,
-                  ROBOT_LENGTH_MM, ROBOT_REFLECTANCE_SENSOR_OFFSET,
+from util import (BALL_RADIUS_MM, CORNER_MEET, CORNER_RADIUS_MM,
+                  FIELD_BOUNDARY_CORNERS, FIELD_BOUNDARY_SEGMENTS,
+                  FIELD_CONFIG, FIELD_LENGTH_MM, FIELD_WIDTH_MM, GOAL_WIDTH_MM,
+                  MAX_WHEEL_SPEED_MMPS, MM_PER_TICK, ROBOT_CORNER_RADIUS_MM,
+                  ROBOT_DISTANCE_SENSOR_OFFSET, ROBOT_LENGTH_MM,
+                  ROBOT_REFLECTANCE_SENSOR_OFFSET,
                   ROBOT_REFLECTANCE_SENSOR_SIDE, ROBOT_WIDTH_MM, TAPE_LINES,
                   TAPE_WIDTH_MM, WHEEL_BASE_MM, clamp_speed,
                   closest_point_on_rounded_rect, point_in_field, ray_to_ball,
@@ -403,41 +404,58 @@ def resolve_robot_overlaps():
                 constrain_robot_to_field(r2)
 
 
-def field_boundary_response(bx, by, vx, vy, radius):  # noqa
-    half_len = FIELD_LENGTH_MM / 2
-    half_wid = FIELD_WIDTH_MM / 2
-    goal_half = GOAL_WIDTH_MM / 2
-    if abs(bx) > half_len and abs(by) < goal_half:
-        sign = 1 if bx > 0 else -1
-        back = sign * (half_len + GOAL_DEPTH_MM)
-        if sign * bx + radius > sign * back:
-            bx = back - sign * radius
-            vx = -sign * abs(vx) * RESTITUTION
-        for ws in (-1, 1):
-            if ws * by + radius > goal_half:
-                by = ws * (goal_half - radius)
-                vy = -ws * abs(vy) * RESTITUTION
-        return bx, by, vx, vy
-    for ws in (-1, 1):
-        if ws * by + radius > half_wid:
-            by = ws * (half_wid - radius)
-            vy = -ws * abs(vy) * RESTITUTION
-    if abs(by) >= goal_half:
-        for ws in (-1, 1):
-            if ws * bx + radius > half_len:
-                bx = ws * (half_len - radius)
-                vx = -ws * abs(vx) * RESTITUTION
-    inner_x = half_len - CORNER_RADIUS_MM
-    inner_y = half_wid - CORNER_RADIUS_MM
-    boundary = CORNER_RADIUS_MM - radius
-    for ccx in (-inner_x, inner_x):
-        for ccy in (-inner_y, inner_y):
-            if (bx - ccx) * ccx <= 0 or (by - ccy) * ccy <= 0:
-                continue
-            dx, dy = bx - ccx, by - ccy
+def field_boundary_response(bx, by, vx, vy, radius):
+    for x1, y1, lx, ly in FIELD_BOUNDARY_SEGMENTS:
+        length_sq = lx * lx + ly * ly
+        length = math.sqrt(length_sq)
+        nx = ly / length
+        ny = -lx / length
+        px = bx - x1
+        py = by - y1
+        t = (px * lx + py * ly) / length_sq
+        if 0 <= t <= 1:
+            d_line = px * nx + py * ny
+            if d_line < radius:
+                push = radius - d_line
+                bx += nx * push
+                by += ny * push
+                dot = vx * nx + vy * ny
+                if dot < 0:
+                    vx -= (1 + RESTITUTION) * dot * nx
+                    vy -= (1 + RESTITUTION) * dot * ny
+        else:
+            if t < 0:
+                cx, cy = x1, y1
+            else:
+                cx, cy = x1 + lx, y1 + ly
+            dx = bx - cx
+            dy = by - cy
             dist = math.sqrt(dx * dx + dy * dy)
-            if dist > boundary and dist > 0:
-                nx, ny = -dx / dist, -dy / dist
+            if dist < radius and dist > 0:
+                enx = dx / dist
+                eny = dy / dist
+                push = radius - dist
+                bx += enx * push
+                by += eny * push
+                dot = vx * enx + vy * eny
+                if dot < 0:
+                    vx -= (1 + RESTITUTION) * dot * enx
+                    vy -= (1 + RESTITUTION) * dot * eny
+    boundary = CORNER_RADIUS_MM - radius
+    for ccx, ccy in FIELD_BOUNDARY_CORNERS:
+        dx = bx - ccx
+        dy = by - ccy
+        dist = math.sqrt(dx * dx + dy * dy)
+        if dist == 0:
+            continue
+        px = ccx + (dx / dist) * CORNER_RADIUS_MM
+        py = ccy + (dy / dist) * CORNER_RADIUS_MM
+        if abs(px) < CORNER_MEET:
+            continue
+        if (px - ccx) * ccx >= -1e-5 and (py - ccy) * ccy >= -1e-5:
+            if dist > boundary:
+                nx = -dx / dist
+                ny = -dy / dist
                 bx = ccx - nx * boundary
                 by = ccy - ny * boundary
                 dot = vx * nx + vy * ny
