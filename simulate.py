@@ -27,7 +27,8 @@ from util import (BALL_RADIUS_MM, CORNER_MEET, CORNER_RADIUS_MM,
                   FIELD_BOUNDARY_CORNERS, FIELD_BOUNDARY_SEGMENTS,
                   FIELD_CONFIG, FIELD_LENGTH_MM, FIELD_WIDTH_MM, GOAL_WIDTH_MM,
                   MAX_WHEEL_SPEED_MMPS, MM_PER_TICK, ROBOT_CORNER_RADIUS_MM,
-                  ROBOT_DISTANCE_SENSOR_OFFSET, ROBOT_LENGTH_MM,
+                  ROBOT_DISTANCE_SENSOR_OFFSET,
+                  ROBOT_DISTANCE_SENSOR_WIDTH_DEG, ROBOT_LENGTH_MM,
                   ROBOT_REFLECTANCE_SENSOR_OFFSET,
                   ROBOT_REFLECTANCE_SENSOR_SIDE, ROBOT_WIDTH_MM, TAPE_LINES,
                   TAPE_WIDTH_MM, WHEEL_BASE_MM, clamp_speed,
@@ -40,6 +41,7 @@ SIM_HZ = 60
 EPISODE_RESTART_DELAY_SEC = 1.0
 EPISODE_MAXIMUM_TIME = 300.0
 BROADCAST_HZ = 60
+DISTANCE_SENSOR_CHECKS = 7
 
 ball_state: dict = {
     'world_x_mm': 0.0,
@@ -250,34 +252,34 @@ def generate_distance_reading(robot, robots_dict, ball):
     dy = math.sin(heading_rad)
     rx += dx * ROBOT_DISTANCE_SENSOR_OFFSET
     ry += dy * ROBOT_DISTANCE_SENSOR_OFFSET
-    min_distance = None
-    t = ray_to_field_boundary(rx, ry, dx, dy)
-    if t is not None and t > 0:
-        min_distance = t if min_distance is None else min(min_distance, t)
-    t = ray_to_ball(rx, ry, dx, dy, ball)
-    if t is not None and t > 0:
-        min_distance = t if min_distance is None else min(min_distance, t)
-    robot_id = robot.get('robot_id')
-    for other_id, other in robots_dict.items():
-        if other_id == robot_id:
-            continue
-        t = ray_to_robot(rx, ry, dx, dy, other)
-        if t is not None and t > 0:
-            min_distance = t if min_distance is None else min(min_distance, t)
-    if min_distance is None or min_distance < 0:
+    distance_mm = 655350
+    for check in range(DISTANCE_SENSOR_CHECKS):
+        theta = heading_rad + ((check / (DISTANCE_SENSOR_CHECKS - 1)) - 0.5) * \
+            2 * math.radians(ROBOT_DISTANCE_SENSOR_WIDTH_DEG)
+        dx = math.cos(theta)
+        dy = math.sin(theta)
+        t = ray_to_field_boundary(rx, ry, dx, dy)
+        distance_mm = min(distance_mm, t) if t is not None and t > 0 else distance_mm
+        t = ray_to_ball(rx, ry, dx, dy, ball)
+        distance_mm = min(distance_mm, t) if t is not None and t > 0 else distance_mm
+        robot_id = robot.get('robot_id')
+        for other_id, other in robots_dict.items():
+            if other_id == robot_id:
+                continue
+            t = ray_to_robot(rx, ry, dx, dy, other)
+            distance_mm = min(distance_mm, t) if t is not None and t > 0 else distance_mm
+    if distance_mm >= 655350 or distance_mm < 0:
         return 65535
-    distance_mm = min_distance
     if distance_mm < 20:
         distance_mm = 20
     noise_std = 0.5 + distance_mm * 0.01
     distance_mm += random.gauss(0, noise_std)
+    if distance_mm > 1000:
+        return 65535
     far_noise = 800
     if random.random() < 0.15 * (distance_mm - far_noise) / (1000 - far_noise):
         return 65535
-    if distance_mm > 1000:
-        return 65535
-    distance_cm = distance_mm / 10.0
-    return max(0, min(65535, distance_cm))
+    return max(0, min(65535, distance_mm / 10.0))
 
 
 def generate_reflectance_readings(robot):
