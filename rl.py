@@ -1,4 +1,5 @@
 import json
+import math
 import random
 
 from util import FIELD_LENGTH_MM, FIELD_WIDTH_MM
@@ -14,12 +15,14 @@ DEFAULT_ACTIONS = [
 
 
 class QAgent:
-    def __init__(self, team='red', actions=None, alpha=0.18, gamma=0.96, epsilon=0.0):
+    def __init__(self, team='red', actions=None, alpha=0.18, gamma=0.96,
+                 epsilon=0.0, softmax=False):
         self.team = team
         self.actions = actions or DEFAULT_ACTIONS
         self.alpha = alpha
         self.gamma = gamma
         self.epsilon = epsilon
+        self.softmax = softmax
         self.q = {}
         self.counts = {}
         self.last_state = None
@@ -71,13 +74,28 @@ class QAgent:
         row[self.last_action] = old_value + self.alpha * (target - old_value)
         counts[self.last_action] += 1
 
+    def weighted_choice(self, options, weights):
+        r = random.random() * sum(weights)
+        for opt, w in zip(options, weights):
+            if r < w:
+                return opt
+            r -= w
+
     def choose_action(self, state):
-        row, _ = self.row(state)
-        if self.epsilon > 0 and random.random() < self.epsilon:
-            return int(random.random() * len(self.actions))
-        best_value = max(row)
-        best = [i for i, value in enumerate(row) if value == best_value]
-        return best[int(random.random() * len(best))]
+        q, n = self.row(state)
+        maxq = max(q)
+        if self.softmax:
+            w = [math.exp(qv - maxq) for qv in q]
+            return self.weighted_choice(range(len(self.actions)), w)
+        if self.epsilon > 0:
+            adjn = [(1 - math.pow(0.995, nv)) / (1 - 0.995) for nv in n]
+            sumn = sum(adjn)
+            epsilon = max(self.epsilon * 0.1, self.epsilon / ((sumn + 1) ** 0.5))
+            if random.random() < epsilon:
+                w = [1 / (nv + 0.01) for nv in n]
+                return self.weighted_choice(range(len(self.actions)), w)
+        best = [i for i, value in enumerate(q) if value == maxq]
+        return random.choice(best)
 
     def row(self, state):
         if state not in self.q:
@@ -135,77 +153,3 @@ class QAgent:
         if position_std < 200 and std_heading < 16:
             return 1
         return 2
-
-
-"""
-Here’s a concrete, drop-in replacement for your `choose_action` method that intelligently uses visit counts while supporting both training and competitive modes.
-
-### Recommended Implementation
-
- ```python
-def choose_action(self, state, competitive=False):
-    q_row, n_row = self.row(state)
-
-    # --- Competitive Mode: Softmax (avoids predictability) ---
-    if competitive:
-        tau = self.competition_temp  # e.g., 0.5 for solo, 1.0 for 2v2
-        q_shifted = q_row - np.max(q_row)  # Numerical stability
-        exp_q = np.exp(q_shifted / tau)
-        probs = exp_q / np.sum(exp_q)
-        return np.random.choice(len(self.actions), p=probs)
-
-    # --- Training Mode: Count-Based Intelligent Exploration ---
-    # Dynamic epsilon: decays with state visits but never hits zero
-    state_visits = n_row.sum()
-    epsilon = max(self.epsilon_min, self.epsilon_base / np.sqrt(state_visits + 1))
-
-    if random.random() < epsilon:
-        # Explore: Weight random choice by inverse visit count
-        # Prefer actions we've tried less (more uncertainty)
-        explore_weights = 1.0 / (n_row + 0.01)  # +0.01 avoids division by zero
-        explore_probs = explore_weights / explore_weights.sum()
-        return np.random.choice(len(self.actions), p=explore_probs)
-
-    # Exploit: Choose best Q-value, break ties randomly
-    best_value = max(q_row)
-    best_actions = [i for i, v in enumerate(q_row) if v == best_value]
-    return random.choice(best_actions)
- ```
-
-### Parameter Settings
-
- ```python
-# Solo robot scoring (less non-stationary)
-self.epsilon_base = 0.3
-self.epsilon_min = 0.02
-self.competition_temp = 0.5
-
-# 2v2 soccer (highly non-stationary)
-self.epsilon_base = 0.5
-self.epsilon_min = 0.10  # Never drop below 10% exploration!
-self.competition_temp = 1.0
- ```
-
-### How It Works
-
-1. **State-dependent epsilon**: Instead of a global `self.epsilon`, it calculates `epsilon` per state based on total visits. First visit to a state → ε ≈ 0.5; after 10,000 visits → ε ≈ 0.005 (but clamped at `epsilon_min`).
-
-2. **Weighted exploration**: When exploring, actions with low `N(s,a)` get higher probability. This is far smarter than uniform random.
-
-3. **Competitive softmax**: In 2v2, this prevents opponents from predicting your exact move when Q-values are close.
-
-### Critical Integration: Recency-Weighted Counts
-
-The `n_row` values should already incorporate forgetting. Update them in your learning step (not in `choose_action`):
-
- ```python
-# In your Q-update method:
-FORGET_RATE = 0.995  # Forget old visits (adjust 0.99-0.999 based on non-stationarity)
-self.N[s][a] = FORGET_RATE * self.N[s][a] + 1
- ```
-
-This ensures `n_row` reflects *recent* experience, making the exploration weights robust to sensor noise and opponent strategy shifts.
-
-
-adjust_n = [(1 - math.pow(0.995, n) / (1 - 0.995) for n in n_row]
-"""

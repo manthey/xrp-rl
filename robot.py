@@ -283,13 +283,13 @@ else:
 
 pestolink = PestoLinkAgent(robot_name)
 pf = particle_filter.ParticleFilter(team=robot_team)
-agent = rl.QAgent(team=robot_team, epsilon=0.15 if robot_mode == 'train' else 0.0)
+agent = rl.QAgent(team=robot_team, epsilon=0.5 if robot_mode == 'train' else 0)
 agent.load(q_file)
 last_save = time.time()
-next_action_time = 0.0
-last_print = 0.0
+next_action_time = 0
+last_print = 0
 
-while True:
+while True:  # noqa
     if pestolink.is_connected():
         if is_simulation:
             virtual_robot.wait_state()
@@ -317,7 +317,7 @@ while True:
         if robot_mode != 'manual' and now >= next_action_time and (
                 robot_mode != 'train' or virtual_robot.training):
             state = agent.discretize(pose, distance_cm, refl_l, refl_r, agent.last_action)
-            reward = 0.0
+            reward = 0
             terminal = False
             if is_simulation and robot_mode == 'train':
                 reward, terminal = virtual_robot.get_reward()
