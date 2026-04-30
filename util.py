@@ -1,10 +1,13 @@
 import math
 
-FIELD_LENGTH_MM = (93 - 12) * 25.4
-FIELD_WIDTH_MM = 45 * 25.4
-GOAL_WIDTH_MM = 24 * 25.4
 GOAL_DEPTH_MM = 6 * 25.4
-CORNER_RADIUS_MM = 250
+GOAL_WIDTH_MM = 20 * 25.4
+FIELD_LENGTH_MM = 93 * 25.4 - GOAL_DEPTH_MM * 2
+FIELD_WIDTH_MM = 45 * 25.4
+CORNER_RADIUS_MM = 13.5 * 25.4
+CORNER_BEVEL = 25.4
+CORNER_MEET = (FIELD_LENGTH_MM / 2 - CORNER_RADIUS_MM + (CORNER_RADIUS_MM**2 - (
+    FIELD_WIDTH_MM / 2 - CORNER_BEVEL - GOAL_WIDTH_MM / 2)**2)**0.5)
 ROBOT_LENGTH_MM = 160
 ROBOT_WIDTH_MM = 190
 ROBOT_CORNER_RADIUS_MM = 20
@@ -34,6 +37,8 @@ FIELD_CONFIG = {
     'goal_width_mm': GOAL_WIDTH_MM,
     'goal_depth_mm': GOAL_DEPTH_MM,
     'corner_radius_mm': CORNER_RADIUS_MM,
+    'corner_bevel': CORNER_BEVEL,
+    'corner_meet': CORNER_MEET,
     'robot_length_mm': ROBOT_LENGTH_MM,
     'robot_width_mm': ROBOT_WIDTH_MM,
     'robot_corner_radius_mm': ROBOT_CORNER_RADIUS_MM,
@@ -49,7 +54,8 @@ HALF_WID = FIELD_WIDTH_MM / 2
 GOAL_HALF = GOAL_WIDTH_MM / 2
 GOAL_BACK = HALF_LEN + GOAL_DEPTH_MM
 INNER_X = HALF_LEN - CORNER_RADIUS_MM
-INNER_Y = HALF_WID - CORNER_RADIUS_MM
+INNER_Y = GOAL_HALF
+print(INNER_X, INNER_Y, CORNER_MEET, HALF_WID, HALF_LEN - CORNER_MEET)
 CORNER_RADIUS_SQ = CORNER_RADIUS_MM * CORNER_RADIUS_MM
 
 FIELD_BOUNDARY_SEGMENTS = []
@@ -66,6 +72,10 @@ for x1, y1, x2, y2 in [
     (GOAL_BACK, -GOAL_HALF, GOAL_BACK, GOAL_HALF),
     (HALF_LEN, -GOAL_HALF, GOAL_BACK, -GOAL_HALF),
     (HALF_LEN, GOAL_HALF, GOAL_BACK, GOAL_HALF),
+    (CORNER_MEET, HALF_WID - CORNER_BEVEL, CORNER_MEET - CORNER_BEVEL, HALF_WID),
+    (-CORNER_MEET, HALF_WID - CORNER_BEVEL, -CORNER_MEET + CORNER_BEVEL, HALF_WID),
+    (CORNER_MEET, -HALF_WID + CORNER_BEVEL, CORNER_MEET - CORNER_BEVEL, -HALF_WID),
+    (-CORNER_MEET, -HALF_WID + CORNER_BEVEL, -CORNER_MEET + CORNER_BEVEL, -HALF_WID),
 ]:
     lx = x2 - x1
     ly = y2 - y1
@@ -122,6 +132,8 @@ def ray_to_field_boundary(rx, ry, dx, dy):
         if t is not None:
             px = rx + dx * t
             py = ry + dy * t
+            if abs(px) < CORNER_MEET:
+                continue
             if (px - cx) * cx > 0 and (py - cy) * cy > 0:
                 min_t = t if min_t is None else min(min_t, t)
     return min_t
@@ -189,16 +201,16 @@ def closest_point_on_rounded_rect(px, py, cx, cy, half_len, half_wid, corner_r, 
 def point_in_field(px, py):
     ax = abs(px)
     ay = abs(py)
-    if ay > HALF_WID:
+    if ay > HALF_WID or ax > HALF_LEN + GOAL_BACK:
         return False
-    if ax < INNER_X:
+    if ax < CORNER_MEET - CORNER_BEVEL:
         return True
     if ay < INNER_Y and ax < HALF_LEN:
         return True
     if ax > HALF_LEN:
-        if ay < GOAL_HALF:
-            return ax <= GOAL_BACK
-        return False
+        return ay < GOAL_HALF
+    if ax < CORNER_MEET:
+        return HALF_WID - ay > ax - (CORNER_MEET - CORNER_BEVEL)
     sign_x = 1 if px >= 0 else -1
     sign_y = 1 if py >= 0 else -1
     corner_x = sign_x * INNER_X

@@ -211,52 +211,40 @@ function drawField() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.save();
 
-  const fw = mmScale(CONFIG.field_length_mm);
-  const fh = mmScale(CONFIG.field_width_mm);
+  const fw2 = mmScale(CONFIG.field_length_mm / 2);
+  const fh2 = mmScale(CONFIG.field_width_mm / 2);
   const r = mmScale(CONFIG.corner_radius_mm);
-  const gw = mmScale(CONFIG.goal_width_mm);
-  const ox = 1 + gd,
-    oy = 1;
-  const gTop = oy + (fh - gw) / 2;
+  const gw2 = mmScale(CONFIG.goal_width_mm / 2);
+  const cm = mmScale(CONFIG.corner_meet);
+  const cb = mmScale(CONFIG.corner_bevel);
+  const ox = 1 + gd + fw2;
+  const oy = 1 + fh2;
 
   for (const line of CONFIG.tape_lines) {
     const [lx] = fieldToCanvas(line.x_mm, 0);
     ctx.strokeStyle = line.color;
     ctx.lineWidth = Math.max(1, Math.round(mmScale(CONFIG.tape_width_mm)));
     ctx.beginPath();
-    ctx.moveTo(lx, oy);
-    ctx.lineTo(lx, oy + fh);
+    ctx.moveTo(lx, oy - fh2);
+    ctx.lineTo(lx, oy + fh2);
     ctx.stroke();
   }
 
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(ox + r, oy);
-  ctx.lineTo(ox + fw - r, oy);
-  ctx.arcTo(ox + fw, oy, ox + fw, oy + r, r);
-  ctx.lineTo(ox + fw, gTop);
-  ctx.moveTo(ox + fw, gTop + gw);
-  ctx.lineTo(ox + fw, oy + fh - r);
-  ctx.arcTo(ox + fw, oy + fh, ox + fw - r, oy + fh, r);
-  ctx.lineTo(ox + r, oy + fh);
-  ctx.arcTo(ox, oy + fh, ox, oy + fh - r, r);
-  ctx.lineTo(ox, gTop + gw);
-  ctx.moveTo(ox, gTop);
-  ctx.lineTo(ox, oy + r);
-  ctx.arcTo(ox, oy, ox + r, oy, r);
-  ctx.stroke();
+  for (const sx of [-1, 1]) {
+    for (const sy of [-1, 1]) {
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(ox, oy + sy * fh2);
+      ctx.lineTo(ox + sx * (cm - cb), oy + sy * fh2);
+      ctx.lineTo(ox + sx * cm, oy + sy * (fh2 - cb));
+      const ang = Math.atan2(sy * (fh2 - cb - gw2), -sx * (fw2 - r - cm));
+      ctx.arc(ox + sx * (fw2 - r), oy + sy * gw2, r, ang, sx > 0 ? 0 : Math.PI, sx * sy > 0);
 
-  for (const side of [-1, 1]) {
-    const wallX = side === 1 ? ox + fw : ox;
-    ctx.strokeStyle = '#aaaaaa';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(wallX, gTop);
-    ctx.lineTo(wallX + side * gd, gTop);
-    ctx.lineTo(wallX + side * gd, gTop + gw);
-    ctx.lineTo(wallX, gTop + gw);
-    ctx.stroke();
+      ctx.lineTo(ox + sx * (fw2 + gd), oy + sy * gw2);
+      ctx.lineTo(ox + sx * (fw2 + gd), oy);
+      ctx.stroke();
+    }
   }
 
   ctx.restore();
