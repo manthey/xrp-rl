@@ -62,10 +62,10 @@ FIELD_BOUNDARY_SEGMENTS = []
 for x1, y1, x2, y2 in [
     (-HALF_LEN, HALF_WID, HALF_LEN, HALF_WID),
     (-HALF_LEN, -HALF_WID, HALF_LEN, -HALF_WID),
-    (-HALF_LEN, -HALF_WID, -HALF_LEN, -GOAL_HALF),
-    (-HALF_LEN, GOAL_HALF, -HALF_LEN, HALF_WID),
-    (HALF_LEN, -HALF_WID, HALF_LEN, -GOAL_HALF),
-    (HALF_LEN, GOAL_HALF, HALF_LEN, HALF_WID),
+    # (-HALF_LEN, -HALF_WID, -HALF_LEN, -GOAL_HALF),
+    # (-HALF_LEN, GOAL_HALF, -HALF_LEN, HALF_WID),
+    # (HALF_LEN, -HALF_WID, HALF_LEN, -GOAL_HALF),
+    # (HALF_LEN, GOAL_HALF, HALF_LEN, HALF_WID),
     (-GOAL_BACK, -GOAL_HALF, -GOAL_BACK, GOAL_HALF),
     (-HALF_LEN, -GOAL_HALF, -GOAL_BACK, -GOAL_HALF),
     (-HALF_LEN, GOAL_HALF, -GOAL_BACK, GOAL_HALF),
@@ -201,7 +201,7 @@ def closest_point_on_rounded_rect(px, py, cx, cy, half_len, half_wid, corner_r, 
 def point_in_field(px, py):
     ax = abs(px)
     ay = abs(py)
-    if ay > HALF_WID or ax > HALF_LEN + GOAL_BACK:
+    if ay > HALF_WID or ax > GOAL_BACK:
         return False
     if ax < CORNER_MEET - CORNER_BEVEL:
         return True

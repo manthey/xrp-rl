@@ -132,31 +132,55 @@ function makeJoystick(robotId) {
   }
 
   function onStart(e) {
-    if (e.type === 'touchstart') e.preventDefault();
+    if (e.type === 'touchstart') {
+      e.preventDefault();
+    }
     state.active = true;
+    state.scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.height = '100%'; // Stabilize
+    document.documentElement.style.position = 'fixed';
+    document.documentElement.style.top = `-${state.scrollTop}px`;
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${state.scrollTop}px`;
     updateFromOffset(...getOffsetInCanvas(e));
   }
 
   function onMove(e) {
-    if (!state.active) return;
-    if (e.type === 'touchmove') e.preventDefault();
+    if (!state.active) {
+      return;
+    }
+    if (e.type === 'touchmove') {
+      e.preventDefault();
+    }
     updateFromOffset(...getOffsetInCanvas(e));
   }
 
   function release() {
-    if (!state.active) return;
+    if (!state.active) {
+      return;
+    }
     state.active = false;
+    document.documentElement.style.overflow = '';
+    document.documentElement.style.height = '';
+    document.documentElement.style.position = '';
+    document.documentElement.style.top = '';
+    document.body.style.overflow = '';
+    document.body.style.position = '';
+    document.body.style.top = '';
+    window.scrollTo(0, state.scrollTop);
     state.dx = state.dy = 0;
     sendVelocity(robotId, 0, 0, velLabel);
     drawJoystick();
   }
 
   jc.addEventListener('mousedown', onStart);
-  jc.addEventListener('touchstart', onStart, { passive: false });
+  jc.addEventListener('touchstart', onStart, { passive: false, capture: true });
   window.addEventListener('mousemove', onMove);
-  window.addEventListener('touchmove', onMove, { passive: false });
+  window.addEventListener('touchmove', onMove, { passive: false, capture: true });
   window.addEventListener('mouseup', release);
-  window.addEventListener('touchend', release);
+  window.addEventListener('touchend', release, { passive: false });
 
   drawJoystick();
   return wrap;

@@ -23,8 +23,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from util import (BALL_RADIUS_MM, CORNER_RADIUS_MM, FIELD_CONFIG,
-                  FIELD_LENGTH_MM, FIELD_WIDTH_MM, GOAL_DEPTH_MM,
+from util import (BALL_RADIUS_MM, CORNER_BEVEL, CORNER_MEET, CORNER_RADIUS_MM,
+                  FIELD_CONFIG, FIELD_LENGTH_MM, FIELD_WIDTH_MM, GOAL_DEPTH_MM,
                   GOAL_WIDTH_MM, MAX_WHEEL_SPEED_MMPS, MM_PER_TICK,
                   ROBOT_CORNER_RADIUS_MM, ROBOT_DISTANCE_SENSOR_OFFSET,
                   ROBOT_LENGTH_MM, ROBOT_REFLECTANCE_SENSOR_OFFSET,
@@ -691,7 +691,8 @@ async def simulation_loop():  # noqa
         if abs(vx) < 0.5 and abs(vy) < 0.5:
             ball_state['vel_x_mmps'] = 0.0
             ball_state['vel_y_mmps'] = 0.0
-        update_rewards(dt)
+        if sim_state['training']:
+            update_rewards(dt)
         for robot in robots.values():
             if robot.get('virtual'):
                 robot['training'] = sim_state['training']
