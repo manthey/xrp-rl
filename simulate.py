@@ -585,15 +585,19 @@ def update_rewards(dt):
             continue
         ball_progress = direction * (bx - prev['ball_x'])
         approach = prev['dist_to_ball'] - dist_to_ball
-        reward = -0.002 * dt
-        reward += 0.0025 * ball_progress
-        reward += 0.0010 * approach
-        reward += 0.0005 * direction * vx * dt
-        if dist_to_ball < 170:
+        reward = -0.005 * dt
+        reward += 0.005 * ball_progress
+        reward += 0.0025 * approach
+        reward += 0.001 * max(0, direction * vx) * dt
+        if abs(vx) > abs(prev.get('ball_vx', 0)) * 1.5 and abs(vx) > 50 and vx * direction > 0:
+            reward += 5
+        if dist_to_ball < 200:
             if (rx - bx) * direction < 0:
-                reward += 0.02 * dt
+                reward += 0.025 * dt
             else:
-                reward += 0.005 * dt
+                reward -= 0.005 * dt
+        else:
+            reward += -0.001 * dt
         terminal = False
         if new_goal:
             terminal = True
@@ -607,6 +611,7 @@ def update_rewards(dt):
         prev['ball_x'] = bx
         prev['ball_y'] = by
         prev['dist_to_ball'] = dist_to_ball
+        prev['ball_vx'] = vx
 
 
 def broadcast_key(message: dict) -> tuple:
