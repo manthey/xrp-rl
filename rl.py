@@ -15,7 +15,7 @@ DEFAULT_ACTIONS = [
 
 
 class QAgent:
-    def __init__(self, team='red', actions=None, alpha=0.18, gamma=0.96,
+    def __init__(self, team='red', actions=None, alpha=0.1, gamma=0.96,
                  epsilon=0.0, softmax=False):
         self.team = team
         self.actions = actions or DEFAULT_ACTIONS
@@ -65,14 +65,15 @@ class QAgent:
     def learn_from_transition(self, next_state, reward, terminal=False):
         if self.last_state is None:
             return
-        row, counts = self.row(self.last_state)
-        old_value = row[self.last_action]
+        q, n = self.row(self.last_state)
+        old_value = q[self.last_action]
         if terminal:
             target = reward
         else:
             target = reward + self.gamma * max(self.row(next_state)[0])
-        row[self.last_action] = old_value + self.alpha * (target - old_value)
-        counts[self.last_action] += 1
+        alpha = max(self.alpha * 0.1, self.alpha / (1 + 10 * n[self.last_action]))
+        q[self.last_action] = old_value + alpha * (target - old_value)
+        n[self.last_action] += 1
 
     def weighted_choice(self, options, weights):
         r = random.random() * sum(weights)
