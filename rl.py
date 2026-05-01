@@ -7,10 +7,10 @@ from util import FIELD_LENGTH_MM, FIELD_WIDTH_MM
 DEFAULT_ACTIONS = [
     ('stop', 0.0, 0.0),  # must be 0-th action
     ('forward_slow', 0.5, 0.0),
-    ('forward_fast', 1, 0.0),
-    ('reverse_fast', -1, 0.0),
-    ('turn_left', 0.0, -1),
-    ('turn_right', 0.0, 1),
+    ('Forward_fast', 1, 0.0),
+    ('Reverse_fast', -1, 0.0),
+    ('left_turn', 0.0, -1),
+    ('right_turn', 0.0, 1),
 ]
 
 
