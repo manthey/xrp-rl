@@ -85,16 +85,15 @@ class QAgent:
     def choose_action(self, state):
         q, n = self.row(state)
         maxq = max(q)
+        if self.epsilon > 0:
+            sumn = sum(n)
+            epsilon = max(self.epsilon * 0.1, self.epsilon / ((sumn + 1) ** 0.5))
+            if random.random() < epsilon:
+                w = [1 / (nv + 1) for nv in n]
+                return self.weighted_choice(range(len(self.actions)), w)
         if self.softmax:
             w = [math.exp(qv - maxq) for qv in q]
             return self.weighted_choice(range(len(self.actions)), w)
-        if self.epsilon > 0:
-            adjn = [(1 - math.pow(0.995, nv)) / (1 - 0.995) for nv in n]
-            sumn = sum(adjn)
-            epsilon = max(self.epsilon * 0.1, self.epsilon / ((sumn + 1) ** 0.5))
-            if random.random() < epsilon:
-                w = [1 / (nv + 0.01) for nv in n]
-                return self.weighted_choice(range(len(self.actions)), w)
         best = [i for i, value in enumerate(q) if value == maxq]
         return random.choice(best)
 
