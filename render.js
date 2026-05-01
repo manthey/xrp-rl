@@ -42,7 +42,7 @@ function computeLayout() {
   const minScale = window.innerWidth / (2 * totalW);
   scale = Math.max(scale, minScale);
   gd = Math.round(scale * CONFIG.goal_depth_mm);
-  if (canvas.width != Math.round(scale * totalW) || canvas.height != Math.round(scale * totalH)) {
+  if (canvas.width !== Math.round(scale * totalW) || canvas.height !== Math.round(scale * totalH)) {
     canvas.width = Math.round(scale * totalW);
     canvas.height = Math.round(scale * totalH);
     canvas.style.width = canvas.width + 'px';
@@ -136,14 +136,6 @@ function makeJoystick(robotId) {
       e.preventDefault();
     }
     state.active = true;
-    state.scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-    document.body.style.overflow = 'hidden';
-    document.documentElement.style.overflow = 'hidden';
-    document.documentElement.style.height = '100%'; // Stabilize
-    document.documentElement.style.position = 'fixed';
-    document.documentElement.style.top = `-${state.scrollTop}px`;
-    document.body.style.position = 'fixed';
-    document.body.style.top = `-${state.scrollTop}px`;
     updateFromOffset(...getOffsetInCanvas(e));
   }
 
@@ -162,14 +154,6 @@ function makeJoystick(robotId) {
       return;
     }
     state.active = false;
-    document.documentElement.style.overflow = '';
-    document.documentElement.style.height = '';
-    document.documentElement.style.position = '';
-    document.documentElement.style.top = '';
-    document.body.style.overflow = '';
-    document.body.style.position = '';
-    document.body.style.top = '';
-    window.scrollTo(0, state.scrollTop);
     state.dx = state.dy = 0;
     sendVelocity(robotId, 0, 0, velLabel);
     drawJoystick();
@@ -309,7 +293,7 @@ function drawRobots() {
   const r = mmScale(CONFIG.robot_corner_radius_mm);
   for (const id in robots) {
     const rob = robots[id];
-    if (rob.world_x_mm == null || rob.world_y_mm == null) continue;
+    if (rob.world_x_mm === null || rob.world_y_mm === null) continue;
     const [cx, cy] = fieldToCanvas(rob.world_x_mm, rob.world_y_mm);
     const rad = ((rob.world_heading_deg ?? 0) * Math.PI) / 180;
 
