@@ -71,7 +71,7 @@ class QAgent:
             target = reward
         else:
             target = reward + self.gamma * max(self.row(next_state)[0])
-        alpha = max(self.alpha * 0.1, self.alpha / (1 + 10 * n[self.last_action]))
+        alpha = max(self.alpha * 0.02, self.alpha / (1 + n[self.last_action]))
         q[self.last_action] = old_value + alpha * (target - old_value)
         n[self.last_action] += 1
 
