@@ -5,7 +5,7 @@ import random
 from util import FIELD_LENGTH_MM, FIELD_WIDTH_MM
 
 DEFAULT_ACTIONS = [
-    ('stop', 0.0, 0.0),  # must be 0-th action
+    # ('stop', 0.0, 0.0),  # must be 0-th action
     ('forward_slow', 0.5, 0.0),
     ('Forward_fast', 1, 0.0),
     ('Reverse_fast', -1, 0.0),
@@ -15,7 +15,7 @@ DEFAULT_ACTIONS = [
 
 
 class QAgent:
-    def __init__(self, team='red', actions=None, alpha=0.1, gamma=0.96,
+    def __init__(self, team='red', actions=None, alpha=0.1, gamma=0.995,
                  epsilon=0.0, softmax=False):
         self.team = team
         self.actions = actions or DEFAULT_ACTIONS
@@ -99,7 +99,7 @@ class QAgent:
 
     def row(self, state):
         if state not in self.q:
-            self.q[state] = [0] * len(self.actions)
+            self.q[state] = [1] * len(self.actions)
             self.counts[state] = [0] * len(self.actions)
         return self.q[state], self.counts[state]
 
@@ -116,7 +116,7 @@ class QAgent:
             heading = (180.0 + heading) % 360.0
         x_bin = self.bin_value(x, -FIELD_LENGTH_MM / 2, FIELD_LENGTH_MM / 2, 15)
         y_bin = self.bin_value(y, -FIELD_WIDTH_MM / 2, FIELD_WIDTH_MM / 2, 7)
-        heading_bin = self.bin_value(((heading + 22.5) % 360.0), 0, 360, 8)
+        heading_bin = self.bin_value(((heading + 22.5) % 360.0), 0, 360, 16)
         distance_bin = self.distance_bin(distance_cm)
         confidence_bin = self.confidence_bin(std_x, std_y, std_heading)
         return '%d,%d,%d,%d,%d,%d' % (
@@ -125,7 +125,7 @@ class QAgent:
             heading_bin,
             distance_bin,
             confidence_bin,
-            previous_action
+            previous_action,
         )
 
     def bin_value(self, value, low, high, count):
@@ -135,7 +135,7 @@ class QAgent:
         try:
             d = float(distance_cm)
         except Exception:
-            return 4
+            return 7
         if d < 12.5:
             return 0
         if d < 25:
@@ -144,7 +144,13 @@ class QAgent:
             return 2
         if d < 100:
             return 3
-        return 4
+        if d < 200:
+            return 4
+        if d < 400:
+            return 5
+        if d < 800:
+            return 6
+        return 7
 
     def confidence_bin(self, std_x, std_y, std_heading):
         position_std = max(std_x, std_y)
@@ -152,4 +158,6 @@ class QAgent:
             return 0
         if position_std < 200 and std_heading < 16:
             return 1
-        return 2
+        if position_std < 400 and std_heading < 32:
+            return 2
+        return 3

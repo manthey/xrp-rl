@@ -555,7 +555,7 @@ def update_rewards(dt):
     if not sim_state['episode_finished'] and (over_time or (
             scored_team is not None and scored_team != reward_memory.get('scored_team'))):
         sim_state['episode_finished'] = True
-        sim_state['run_record'].append(' ')
+        sim_state['run_record'].append(' ' if scored_team is None else scored_team[:1])
         sim_state['restart'] = sim_state['sim_time'] + EPISODE_RESTART_DELAY_SEC
         for robot in robots.values():
             robot['cmd_vel_left'] = robot['cmd_vel_right'] = 0.0
@@ -565,7 +565,6 @@ def update_rewards(dt):
         reward_memory['scored_team'] = None
     elif new_goal:
         reward_memory['scored_team'] = scored_team
-        sim_state['run_record'].append(scored_team[:1])
     bx = ball_state['world_x_mm']
     by = ball_state['world_y_mm']
     vx = ball_state['vel_x_mmps']
