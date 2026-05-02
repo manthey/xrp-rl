@@ -11,6 +11,14 @@ let ball = { world_x_mm: 0, world_y_mm: 0, vel_x_mmps: 0, vel_y_mmps: 0 };
 const joystickState = {};
 let ws = null;
 
+let qFiles = [];
+let qIndex = -1;
+let qvIndex = 0;
+let qData = null;
+let qAverages = null;
+let qGridInfo = null;
+let qCanvas = null;
+
 function connectWebSocket() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
   ws = new WebSocket(`ws://${location.host}/ws`);
@@ -186,6 +194,100 @@ function train(active) {
   }
 }
 
+async function hideExtended() {
+  const btn = document.getElementById('hide-ext');
+  const div = document.getElementById('extended');
+  div.classList.toggle('hidden');
+  btn.textContent = div.classList.contains('hidden') ? 'Show' : 'Hide';
+}
+
+async function toggleQState() {
+  const btn = document.getElementById('show-qstate');
+  if (qFiles.length === 0) {
+    try {
+      const res = await fetch('/q_files/list');
+      const data = await res.json();
+      qFiles = data.files || [];
+    } catch (e) {
+      return;
+    }
+  }
+  if (qFiles.length === 0) return;
+
+  if (qIndex < 0) {
+    qIndex = 0;
+    qvIndex = 0;
+  } else {
+    qvIndex = (qvIndex + 1) % 4;
+    if (!qvIndex) {
+      qIndex = (qIndex + 1) % (qFiles.length + 1);
+    }
+    if (qIndex === qFiles.length) {
+      qIndex = -1;
+      qData = null;
+      qAverages = null;
+      qCanvas = null;
+      btn.textContent = 'Visualize: Off';
+      render();
+      return;
+    }
+  }
+  const desc = ['', ' (dist)', ' (acc)', ' (prev)'];
+  btn.textContent = `Visualize: ${qFiles[qIndex]}${desc[qvIndex]}`;
+  try {
+    const res = await fetch(`/q_files/${qIndex}`);
+    qData = await res.json();
+    processQData(qData);
+    qCanvas = null;
+    render();
+  } catch (e) {
+    qData = null;
+    qCanvas = null;
+  }
+}
+
+function processQData(data) {
+  qAverages = {};
+  let maxX = 0,
+    maxY = 0,
+    maxH = 0,
+    maxP1 = 0;
+  const sums = {};
+  for (const key in data.q) {
+    const parts = key.split(',').map(Number);
+    const x = parts[0];
+    const y = parts[1];
+    const h = parts[2];
+    const p1 = qvIndex === 0 ? 0 : parts[2 + qvIndex];
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+    if (h > maxH) maxH = h;
+    if (p1 > maxP1) maxP1 = p1;
+    const subKey = `${x},${y},${h},${p1}`;
+    if (!sums[subKey]) {
+      sums[subKey] = { q: data.q[key].map(() => 0), c: 0 };
+    }
+    const qVals = data.q[key];
+    for (let i = 0; i < qVals.length; i++) {
+      sums[subKey].q[i] += qVals[i];
+    }
+    sums[subKey].c++;
+  }
+  for (const key in sums) {
+    const avg = sums[key].q.map((v) => v / sums[key].c);
+    let maxIdx = 0;
+    let maxVal = -Infinity;
+    for (let i = 0; i < avg.length; i++) {
+      if (avg[i] > maxVal) {
+        maxVal = avg[i];
+        maxIdx = i;
+      }
+    }
+    qAverages[key] = maxIdx;
+  }
+  qGridInfo = { maxX, maxY, maxH, maxP1 };
+}
+
 function rebuildJoysticks() {
   const container = document.getElementById('joysticks');
   const virtualIds = Object.keys(robots).filter((id) => robots[id].virtual);
@@ -256,6 +358,92 @@ function drawField() {
   }
 
   ctx.restore();
+}
+
+function renderQStateOffscreen() {
+  if (!qData || !qAverages) {
+    qCanvas = null;
+    return;
+  }
+  if (!qCanvas) qCanvas = document.createElement('canvas');
+  qCanvas.width = canvas.width;
+  qCanvas.height = canvas.height;
+  const qCtx = qCanvas.getContext('2d');
+  qCtx.clearRect(0, 0, qCanvas.width, qCanvas.height);
+
+  const { maxX, maxY, maxH, maxP1 } = qGridInfo;
+  const binW = CONFIG.field_length_mm / (maxX + 1);
+  const binH = CONFIG.field_width_mm / (maxY + 1);
+  const maxR = Math.min(binW, binH) * 0.48;
+  const innerR = maxR * 0.2;
+  const ringW = (maxR - innerR) / (maxP1 + 1);
+  const dTheta = (2 * Math.PI) / (maxH + 1);
+
+  qCtx.save();
+  for (let x = 0; x <= maxX; x++) {
+    for (let y = 0; y <= maxY; y++) {
+      const wx = (x + 0.5) * binW - CONFIG.field_length_mm / 2;
+      const wy = (y + 0.5) * binH - CONFIG.field_width_mm / 2;
+      const [cx, cy] = fieldToCanvas(wx, wy);
+
+      for (let h = 0; h <= maxH; h++) {
+        const theta = h * dTheta;
+        const ca = -theta;
+        for (let p1 = 0; p1 <= maxP1; p1++) {
+          const subkey = `${x},${y},${h},${p1}`;
+          const actionIdx = qAverages[subkey];
+          if (actionIdx === undefined) {
+            continue;
+          }
+          const action = qData.actions[actionIdx];
+          const r1 = scale * (innerR + p1 * ringW);
+          const r2 = scale * (innerR + (p1 + 1) * ringW);
+          const rMid = ((2 / 3) * (r2 ** 3 - r1 ** 3)) / (r2 ** 2 - r1 ** 2);
+
+          qCtx.beginPath();
+          qCtx.arc(cx, cy, r2, ca - dTheta / 2, ca + dTheta / 2);
+          qCtx.arc(cx, cy, r1, ca + dTheta / 2, ca - dTheta / 2, true);
+          qCtx.fillStyle = 'rgba(50, 50, 50, 0.4)';
+          qCtx.fill();
+
+          const vx = action[1];
+          const vy = action[2];
+          const mag = Math.sqrt(vx * vx + vy * vy);
+          if (mag > 0) {
+            const len = Math.max(2, Math.min(scale * ringW, rMid * dTheta) * 0.9) * mag;
+            const ux = vx / mag;
+            const uy = vy / mag;
+            const dx = (ux * Math.cos(ca) - uy * Math.sin(ca)) * len;
+            const dy = (ux * Math.sin(ca) + uy * Math.cos(ca)) * len;
+            const midX = cx + Math.cos(ca) * rMid;
+            const midY = cy + Math.sin(ca) * rMid;
+            const tipX = midX + dx / 2;
+            const tipY = midY + dy / 2;
+            const startX = midX - dx / 2;
+            const startY = midY - dy / 2;
+            const backX = midX - dx / 6;
+            const backY = midY - dy / 6;
+            const nx = -dy / 3;
+            const ny = dx / 3;
+            qCtx.beginPath();
+            qCtx.moveTo(startX, startY);
+            qCtx.lineTo(midX, midY);
+            qCtx.strokeStyle = '#fff';
+            qCtx.lineWidth = 1.5;
+            qCtx.stroke();
+            qCtx.beginPath();
+            qCtx.moveTo(tipX, tipY);
+            qCtx.lineTo(backX + nx, backY + ny);
+            qCtx.lineTo(backX - nx, backY - ny);
+            qCtx.closePath();
+            qCtx.fillStyle = '#fff';
+            qCtx.fill();
+          }
+        }
+      }
+    }
+  }
+  qCtx.restore();
 }
 
 function drawBall() {
@@ -329,15 +517,22 @@ function drawRobots() {
 
 function render() {
   computeLayout();
+  if (qData && (!qCanvas || qCanvas.width !== canvas.width || qCanvas.height !== canvas.height)) {
+    renderQStateOffscreen();
+  }
   drawField();
+  if (qCanvas) {
+    ctx.drawImage(qCanvas, 0, 0);
+  }
   drawBall();
   drawRobots();
 }
 
 function updateBallInfo() {
   const fmt = (v) => (v ?? 0).toFixed(1);
-  document.getElementById('ball-info').textContent =
-    `x: ${fmt(ball.world_x_mm)} mm   y: ${fmt(ball.world_y_mm)} mm   vx: ${fmt(ball.vel_x_mmps)} mm/s   vy: ${fmt(ball.vel_y_mmps)} mm/s`;
+  document.getElementById('ball-info').textContent = `x: ${fmt(ball.world_x_mm)} mm   y: ${fmt(
+    ball.world_y_mm,
+  )} mm   vx: ${fmt(ball.vel_x_mmps)} mm/s   vy: ${fmt(ball.vel_y_mmps)} mm/s`;
 }
 
 function updateTable() {
@@ -401,6 +596,7 @@ function sendBallState() {
     vel_y_mmps: getInputValue('ball-vy'),
   });
 }
+
 function updateTrainingInfo(state) {
   const infoEl = document.getElementById('training-info');
   if (state.run_number !== undefined && state.sim_time) {
@@ -410,6 +606,7 @@ function updateTrainingInfo(state) {
     infoEl.textContent = `Run: ${state.run_number}, R: ${r}, B: ${b}, Time: ${elapsed}s`;
   }
 }
+
 window.addEventListener('resize', render);
 
 function onWsMessage(event) {
