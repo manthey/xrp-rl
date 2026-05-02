@@ -405,8 +405,8 @@ function updateTrainingInfo(state) {
   const infoEl = document.getElementById('training-info');
   if (state.run_number !== undefined && state.sim_time) {
     const elapsed = (state.sim_time - state.sim_start).toFixed(1);
-    const r = Math.round(((state.run_result || {}).red || 0) * 100);
-    const b = Math.round(((state.run_result || {}).blue || 0) * 100);
+    const r = (state.run_record || {}).red || 0;
+    const b = (state.run_record || {}).blue || 0;
     infoEl.textContent = `Run: ${state.run_number}, R: ${r}, B: ${b}, Time: ${elapsed}s`;
   }
 }

@@ -656,9 +656,8 @@ async def broadcast_loop():
 
 def run_summary():
     recent = sim_state['run_record'][-100:]
-    lenr = len(recent) or 1
-    return {'red': len([r for r in recent if r == 'r']) / lenr,
-            'blue': len([b for b in recent if b == 'b']) / lenr}
+    return {'red': len([r for r in recent if r == 'r']),
+            'blue': len([b for b in recent if b == 'b'])}
 
 
 async def simulation_loop():  # noqa
