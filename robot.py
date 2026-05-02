@@ -149,21 +149,9 @@ if is_simulation:  # noqa
                     self.terminal_id = terminal_id
                     self.pending_terminal = True
                 if data.get('reset', False):
-                    if self.terminal_reward is not None:
-                        self.episodes[1 if self.terminal_reward > 0 else 2] += 1
-                        self.episodes[3].append(1 if self.terminal_reward > 0 else -1)
-                    else:
-                        self.episodes[3].append(0)
-                    print(
-                        f'{robot_name}  episodes {self.episodes[0]}, '
-                        f'W {self.episodes[1]}, L {self.episodes[2]}, '
-                        f'RP100 {sum(self.episodes[3][-100:]) / len(self.episodes[3][-100:]):4.2f}')
-                    self.episodes[0] += 1
-                    self.terminal_reward = None
-                    self.reward_total = 0.0
-                    self.last_reward_total = 0.0
-                    self.terminal_id = 0
-                    self.pending_terminal = False
+                    if not self.pending_terminal and reward_total != self.reward_total:
+                        self.pending_terminal = True
+                        self.reward_total = reward_total
                     self.reset = True
                 else:
                     if reward_total < self.reward_total:
@@ -293,10 +281,12 @@ while True:  # noqa
     if pestolink.is_connected():
         if is_simulation:
             virtual_robot.wait_state()
-            if virtual_robot.reset:
+            if virtual_robot.reset and not virtual_robot.pending_terminal:
                 virtual_robot.reset = False
+                virtual_robot.needs_episode_end = True
                 pf.reset()
                 agent.reset_episode()
+                next_action_time = 0
         if robot_mode == 'manual':
             rotation = -1 * pestolink.get_axis(2)
             throttle = -1 * pestolink.get_axis(1)
@@ -314,7 +304,8 @@ while True:  # noqa
             virtual_robot.send_pose(pose)
         if not next_action_time:
             next_action_time = now
-        if robot_mode != 'manual' and now >= next_action_time and (
+        force = is_simulation and virtual_robot.pending_terminal
+        if robot_mode != 'manual' and (force or now >= next_action_time) and (
                 robot_mode != 'train' or virtual_robot.training):
             state = agent.discretize(pose, distance_cm, refl_l, refl_r, agent.last_action)
             reward = 0
@@ -332,6 +323,29 @@ while True:  # noqa
             drivetrain.arcade(straight, turn)
             agent.remember(state, action)
             next_action_time = max(now, next_action_time + 0.25)
+        if is_simulation and virtual_robot.reset:
+            virtual_robot.reset = False
+            virtual_robot.needs_episode_end = True
+            pf.reset()
+            agent.reset_episode()
+            next_action_time = 0
+        if is_simulation and getattr(virtual_robot, 'needs_episode_end', False):
+            virtual_robot.needs_episode_end = False
+            if virtual_robot.terminal_reward:
+                virtual_robot.episodes[1 if virtual_robot.terminal_reward > 0 else 2] += 1
+                virtual_robot.episodes[3].append(1 if virtual_robot.terminal_reward > 0 else -1)
+            else:
+                virtual_robot.episodes[3].append(0)
+            rp100 = sum(virtual_robot.episodes[3][-100:]) / len(virtual_robot.episodes[3][-100:])
+            print(f'{robot_name}  episodes {virtual_robot.episodes[0]}, '
+                  f'W {virtual_robot.episodes[1]}, L {virtual_robot.episodes[2]}, '
+                  f'RP100 {rp100:4.2f}')
+            virtual_robot.episodes[0] += 1
+            virtual_robot.terminal_reward = None
+            virtual_robot.reward_total = 0.0
+            virtual_robot.last_reward_total = 0.0
+            virtual_robot.terminal_id = 0
+            virtual_robot.pending_terminal = False
         if robot_mode == 'train' and time.time() - last_save > 30:
             agent.save(q_file)
             last_save = time.time()
