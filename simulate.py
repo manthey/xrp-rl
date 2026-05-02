@@ -26,8 +26,8 @@ from pydantic import BaseModel
 from util import (BALL_RADIUS_MM, CORNER_MEET, CORNER_RADIUS_MM,
                   FIELD_BOUNDARY_CORNERS, FIELD_BOUNDARY_SEGMENTS,
                   FIELD_CONFIG, FIELD_LENGTH_MM, FIELD_WIDTH_MM, GOAL_WIDTH_MM,
-                  MAX_WHEEL_SPEED_MMPS, MM_PER_TICK, ROBOT_CORNER_RADIUS_MM,
-                  ROBOT_DISTANCE_SENSOR_OFFSET,
+                  INERTIA_MMPS_PER_TICK, MAX_WHEEL_SPEED_MMPS, MM_PER_TICK,
+                  ROBOT_CORNER_RADIUS_MM, ROBOT_DISTANCE_SENSOR_OFFSET,
                   ROBOT_DISTANCE_SENSOR_WIDTH_DEG, ROBOT_LENGTH_MM,
                   ROBOT_REFLECTANCE_SENSOR_OFFSET,
                   ROBOT_REFLECTANCE_SENSOR_SIDE, ROBOT_WIDTH_MM, TAPE_LINES,
@@ -78,6 +78,8 @@ def ensure_virtual_robot(robot_id: str, team: str = 'red', pos: str = 'high') ->
             'team': team,
             'cmd_vel_left': 0.0,
             'cmd_vel_right': 0.0,
+            'last_vel_left': 0.0,
+            'last_vel_right': 0.0,
             'left_encoder': 0.0,
             'right_encoder': 0.0,
             'distance_cm': 65535.0,
@@ -199,6 +201,8 @@ def reset_episode():
                 'right_encoder': 0.0,
                 'cmd_vel_left': 0.0,
                 'cmd_vel_right': 0.0,
+                'last_vel_left': 0.0,
+                'last_vel_right': 0.0,
                 'distance_cm': 65535.0,
                 'training': sim_state['training'],
                 'reset': True})
@@ -490,8 +494,8 @@ def collide_ball_with_robot(bx, by, vx, vy, robot):
     penetration = BALL_RADIUS_MM + dist if inside else BALL_RADIUS_MM - dist
     bx += nx * penetration
     by += ny * penetration
-    vl = robot.get('cmd_vel_left', 0.0)
-    vr = robot.get('cmd_vel_right', 0.0)
+    vl = robot.get('last_vel_left', 0.0)
+    vr = robot.get('last_vel_right', 0.0)
     forward_speed = (vl + vr) / 2.0
     angular_speed = (vr - vl) / WHEEL_BASE_MM
     fwd_x, fwd_y = math.cos(heading_rad), math.sin(heading_rad)
@@ -516,8 +520,16 @@ def apply_friction(vx, vy, dt):
 
 
 def step_virtual_robot(robot: dict, dt: float):
-    vl = robot.get('cmd_vel_left', 0.0)
-    vr = robot.get('cmd_vel_right', 0.0)
+    vlt = robot.get('cmd_vel_left', 0.0)
+    vrt = robot.get('cmd_vel_right', 0.0)
+    vl = robot.get('last_vel_left', 0.0)
+    vr = robot.get('last_vel_right', 0.0)
+    if vl != vlt:
+        vl += max(min(vlt - vl, INERTIA_MMPS_PER_TICK), -INERTIA_MMPS_PER_TICK)
+        robot['last_vel_left'] = vl
+    if vr != vrt:
+        vr += max(min(vrt - vr, INERTIA_MMPS_PER_TICK), -INERTIA_MMPS_PER_TICK)
+        robot['last_vel_right'] = vr
     if vl == 0.0 and vr == 0.0:
         return
     heading_rad = math.radians(robot.get('world_heading_deg', 0.0))

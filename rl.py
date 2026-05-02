@@ -71,7 +71,7 @@ class QAgent:
             target = reward
         else:
             target = reward + self.gamma * max(self.row(next_state)[0])
-        alpha = max(self.alpha * 0.02, self.alpha / (1 + n[self.last_action]))
+        alpha = max(self.alpha * 0.1, self.alpha / (1 + n[self.last_action]))
         q[self.last_action] = old_value + alpha * (target - old_value)
         n[self.last_action] += 1
 
@@ -87,7 +87,7 @@ class QAgent:
         maxq = max(q)
         if self.epsilon > 0:
             sumn = sum(n)
-            epsilon = max(self.epsilon * 0.1, self.epsilon / ((sumn + 1) ** 0.5))
+            epsilon = max(self.epsilon * 0.2, self.epsilon / ((sumn + 1) ** 0.5))
             if random.random() < epsilon:
                 w = [1 / (nv + 1) for nv in n]
                 return self.weighted_choice(range(len(self.actions)), w)
