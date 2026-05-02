@@ -153,9 +153,8 @@ if is_simulation:  # noqa
                         self.pending_terminal = True
                         self.reward_total = reward_total
                     self.reset = True
+                    self.last_result = data.get('last_result')
                 else:
-                    if reward_total < self.reward_total:
-                        self.last_reward_total = 0.0
                     self.reward_total = reward_total
                 return
 
@@ -331,9 +330,10 @@ while True:  # noqa
             next_action_time = 0
         if is_simulation and getattr(virtual_robot, 'needs_episode_end', False):
             virtual_robot.needs_episode_end = False
-            if virtual_robot.terminal_reward:
-                virtual_robot.episodes[1 if virtual_robot.terminal_reward > 0 else 2] += 1
-                virtual_robot.episodes[3].append(1 if virtual_robot.terminal_reward > 0 else -1)
+            if virtual_robot.last_result in 'br':
+                win = robot_team[:1] == virtual_robot.last_result
+                virtual_robot.episodes[1 if win else 2] += 1
+                virtual_robot.episodes[3].append(1 if win else -1)
             else:
                 virtual_robot.episodes[3].append(0)
             rp100 = sum(virtual_robot.episodes[3][-100:]) / len(virtual_robot.episodes[3][-100:])
