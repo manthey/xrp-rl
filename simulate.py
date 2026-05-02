@@ -56,6 +56,7 @@ robot_rewards: dict[str, dict] = {}
 reward_memory: dict[str, dict] = {}
 sim_state = {'training': False, 'episode_finished': False, 'restart': None,
              'run_number': 0, 'run_start_time': None, 'sim_time': 0.0,
+             'run_record': [],
              'synced_robots': set(), 'sim_start': 0.0, 'fast': False}
 pending_broadcasts: dict[tuple, dict] = {}
 
@@ -554,6 +555,7 @@ def update_rewards(dt):
     if not sim_state['episode_finished'] and (over_time or (
             scored_team is not None and scored_team != reward_memory.get('scored_team'))):
         sim_state['episode_finished'] = True
+        sim_state['run_record'].append(' ')
         sim_state['restart'] = sim_state['sim_time'] + EPISODE_RESTART_DELAY_SEC
         for robot in robots.values():
             robot['cmd_vel_left'] = robot['cmd_vel_right'] = 0.0
@@ -563,6 +565,7 @@ def update_rewards(dt):
         reward_memory['scored_team'] = None
     elif new_goal:
         reward_memory['scored_team'] = scored_team
+        sim_state['run_record'].append(scored_team[:1])
     bx = ball_state['world_x_mm']
     by = ball_state['world_y_mm']
     vx = ball_state['vel_x_mmps']
@@ -651,6 +654,13 @@ async def broadcast_loop():
         await flush_broadcasts()
 
 
+def run_summary():
+    recent = sim_state['run_record'][-100:]
+    lenr = len(recent) or 1
+    return {'red': len([r for r in recent if r == 'r']) / lenr,
+            'blue': len([b for b in recent if b == 'b']) / lenr}
+
+
 async def simulation_loop():  # noqa
     dt = 1.0 / SIM_HZ
     next_time = time.time()
@@ -685,6 +695,7 @@ async def simulation_loop():  # noqa
                 'data': {
                     'training': sim_state['training'],
                     'run_number': sim_state['run_number'],
+                    'run_record': run_summary(),
                     'run_start_time': sim_state['run_start_time'],
                     'sim_start': sim_state['sim_start'],
                     'sim_time': sim_state['sim_time'],
@@ -739,6 +750,7 @@ async def simulation_loop():  # noqa
                 'data': {
                     'training': sim_state['training'],
                     'run_number': sim_state['run_number'],
+                    'run_record': run_summary(),
                     'run_start_time': sim_state['run_start_time'],
                     'sim_start': sim_state['sim_start'],
                     'sim_time': sim_state['sim_time'],
@@ -904,6 +916,7 @@ async def websocket_endpoint(ws: WebSocket):
             'data': {
                 'training': sim_state['training'],
                 'run_number': sim_state['run_number'],
+                'run_record': run_summary(),
                 'run_start_time': sim_state['run_start_time'],
                 'sim_start': sim_state['sim_start'],
                 'sim_time': sim_state['sim_time'],
