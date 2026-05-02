@@ -330,7 +330,7 @@ while True:  # noqa
             next_action_time = 0
         if is_simulation and getattr(virtual_robot, 'needs_episode_end', False):
             virtual_robot.needs_episode_end = False
-            if virtual_robot.last_result in 'br':
+            if virtual_robot.last_result and virtual_robot.last_result in 'br':
                 win = robot_team[:1] == virtual_robot.last_result
                 virtual_robot.episodes[1 if win else 2] += 1
                 virtual_robot.episodes[3].append(1 if win else -1)

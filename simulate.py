@@ -129,7 +129,7 @@ def update_estimated_pose(data: dict):
     if robot_id not in robots:
         return
     robots[robot_id]['estimated_pose'] = data
-    enqueue_broadcast({'type': 'estimated_pose', 'data': data})
+    queue_broadcast({'type': 'estimated_pose', 'data': data})
 
 
 async def send_robot_state(robot_id: str, ws: WebSocket):
@@ -626,7 +626,7 @@ def broadcast_key(message: dict) -> tuple:
     return msg_type, robot_id
 
 
-def enqueue_broadcast(message: dict):
+def queue_broadcast(message: dict):
     pending_broadcasts[broadcast_key(message)] = message
 
 
@@ -691,7 +691,7 @@ async def simulation_loop():  # noqa
         if (sim_state['training'] and sim_state['restart'] is not None and
                 sim_state['sim_time'] >= sim_state['restart']):
             reset_episode()
-            enqueue_broadcast({
+            queue_broadcast({
                 'type': 'training_state',
                 'data': {
                     'training': sim_state['training'],
@@ -741,12 +741,12 @@ async def simulation_loop():  # noqa
             robot_id: dict(robot) for robot_id, robot in robots.items() if robot.get('virtual')
         }
         if virtual_updates:
-            enqueue_broadcast({'type': 'virtual_robots', 'data': virtual_updates})
-        enqueue_broadcast({'type': 'ball', 'data': dict(ball_state)})
+            queue_broadcast({'type': 'virtual_robots', 'data': virtual_updates})
+        queue_broadcast({'type': 'ball', 'data': dict(ball_state)})
         now = time.time()
         if sim_state['training'] and now - last_training_broadcast >= 10.0:
             last_training_broadcast = now
-            enqueue_broadcast({
+            queue_broadcast({
                 'type': 'training_state',
                 'data': {
                     'training': sim_state['training'],
@@ -817,14 +817,14 @@ async def receive_telemetry(telemetry: Telemetry):
     if telemetry.robot_id not in robots:
         robots[telemetry.robot_id] = {}
     robots[telemetry.robot_id].update(data)
-    enqueue_broadcast({'type': 'telemetry', 'data': data})
+    queue_broadcast({'type': 'telemetry', 'data': data})
     return {'status': 'ok'}
 
 
 @app.post('/ball')
 async def update_ball(state: BallState):
     ball_state.update(state.model_dump())
-    enqueue_broadcast({'type': 'ball', 'data': dict(ball_state)})
+    queue_broadcast({'type': 'ball', 'data': dict(ball_state)})
     return {'status': 'ok'}
 
 
@@ -853,7 +853,7 @@ async def override_pose(override: PoseOverride):
     generate_imu_reading(robots[robot_id])
     constrain_robot_to_field(robots[robot_id])
     resolve_robot_overlaps()
-    enqueue_broadcast({'type': 'pose_override', 'data': override.model_dump()})
+    queue_broadcast({'type': 'pose_override', 'data': override.model_dump()})
     return {'status': 'ok'}
 
 
@@ -946,6 +946,32 @@ async def websocket_endpoint(ws: WebSocket):
             ui_websocket_clients.remove(ws)
 
 
+@app.get('/q_files/list')
+def q_files_list():
+    return {'files': [os.path.splitext(os.path.basename(f))[0] for f in sim_state['q_files']]}
+
+
+@app.get('/q_files/{index}')
+def q_files_index(index: int):
+    try:
+        with open(sim_state['q_files'][index]) as f:
+            return json.load(f)
+    except Exception:
+        return {'error': 'load failed'}
+
+
+@app.get('/train')
+def set_train(active: bool):
+    if active and not sim_state['training']:
+        sim_state['training'] = True
+        reset_episode()
+    elif not active:
+        sim_state['training'] = False
+        for robot in robots.values():
+            robot['training'] = False
+            robot['cmd_vel_left'] = robot['cmd_vel_right'] = 0.0
+
+
 def build_html(config: dict) -> str:
     html = open(os.path.join(os.path.dirname(__file__), 'render.html')).read()
     html = html.replace('MAINSCRIPT', open(
@@ -963,8 +989,10 @@ def main():
     parser.add_argument('--host', default='0.0.0.0')
     parser.add_argument('--port', '-p', type=int, default=8080)
     parser.add_argument('--fast', action='store_true', default=False)
+    parser.add_argument('--q-file', action='append', default=[])
     args = parser.parse_args()
     sim_state['fast'] = args.fast
+    sim_state['q_files'] = args.q_file
     uvicorn.run(app, host=args.host, port=args.port, access_log=False)
 
 
