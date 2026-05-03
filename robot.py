@@ -178,6 +178,8 @@ if is_simulation:  # noqa
                 self.last_pf_report = now
 
         def get_reward(self):
+            if self.reset:
+                self.last_reward_total = 0
             reward = self.reward_total - self.last_reward_total
             self.last_reward_total = self.reward_total
             terminal = self.pending_terminal

@@ -377,8 +377,8 @@ function renderQStateOffscreen() {
     return;
   }
   if (!qCanvas) qCanvas = document.createElement('canvas');
-  qCanvas.width = canvas.width;
-  qCanvas.height = canvas.height;
+  qCanvas.width = canvas.width * 2;
+  qCanvas.height = canvas.height * 2;
   const qCtx = qCanvas.getContext('2d');
   qCtx.clearRect(0, 0, qCanvas.width, qCanvas.height);
 
@@ -442,7 +442,7 @@ function renderQStateOffscreen() {
             qCtx.moveTo(startX, startY);
             qCtx.lineTo(midX, midY);
             qCtx.strokeStyle = '#fff';
-            qCtx.lineWidth = 1.5;
+            qCtx.lineWidth = len / 8;
             qCtx.stroke();
             qCtx.beginPath();
             qCtx.moveTo(tipX, tipY);
@@ -530,7 +530,7 @@ function drawRobots() {
 
 function render() {
   computeLayout();
-  if (qData && (!qCanvas || qCanvas.width !== canvas.width || qCanvas.height !== canvas.height)) {
+  if (qData && (!qCanvas || qCanvas.width !== canvas.width * 2 || qCanvas.height !== canvas.height * 2)) {
     renderQStateOffscreen();
   }
   drawField();
