@@ -273,6 +273,8 @@ function processQData(data) {
     }
     sums[subKey].c++;
   }
+  let maxMaxVal;
+  let minMaxVal;
   for (const key in sums) {
     const avg = sums[key].q.map((v) => v / sums[key].c);
     let maxIdx = 0;
@@ -283,9 +285,18 @@ function processQData(data) {
         maxIdx = i;
       }
     }
-    qAverages[key] = maxIdx;
+    if (maxMaxVal === undefined) {
+      minMaxVal = maxMaxVal = maxVal;
+    }
+    if (maxVal > maxMaxVal) {
+      maxMaxVal = maxVal;
+    }
+    if (maxVal < minMaxVal) {
+      minMaxVal = maxVal;
+    }
+    qAverages[key] = [maxIdx, maxVal];
   }
-  qGridInfo = { maxX, maxY, maxH, maxP1 };
+  qGridInfo = { maxX, maxY, maxH, maxP1, minMaxVal, maxMaxVal };
 }
 
 function rebuildJoysticks() {
@@ -371,7 +382,8 @@ function renderQStateOffscreen() {
   const qCtx = qCanvas.getContext('2d');
   qCtx.clearRect(0, 0, qCanvas.width, qCanvas.height);
 
-  const { maxX, maxY, maxH, maxP1 } = qGridInfo;
+  const { maxX, maxY, maxH, maxP1, minMaxVal, maxMaxVal } = qGridInfo;
+  const maxValRange = maxMaxVal - minMaxVal || 1;
   const binW = CONFIG.field_length_mm / (maxX + 1);
   const binH = CONFIG.field_width_mm / (maxY + 1);
   const maxR = Math.min(binW, binH) * 0.48;
@@ -391,10 +403,10 @@ function renderQStateOffscreen() {
         const ca = -theta;
         for (let p1 = 0; p1 <= maxP1; p1++) {
           const subkey = `${x},${y},${h},${p1}`;
-          const actionIdx = qAverages[subkey];
-          if (actionIdx === undefined) {
+          if (qAverages[subkey] === undefined) {
             continue;
           }
+          const [actionIdx, maxVal] = qAverages[subkey];
           const action = qData.actions[actionIdx];
           const r1 = scale * (innerR + p1 * ringW);
           const r2 = scale * (innerR + (p1 + 1) * ringW);
@@ -403,7 +415,8 @@ function renderQStateOffscreen() {
           qCtx.beginPath();
           qCtx.arc(cx, cy, r2, ca - dTheta / 2, ca + dTheta / 2);
           qCtx.arc(cx, cy, r1, ca + dTheta / 2, ca - dTheta / 2, true);
-          qCtx.fillStyle = 'rgba(50, 50, 50, 0.4)';
+          const relMaxVal = ((maxVal - minMaxVal) / maxValRange) * 0.6 + 0.2;
+          qCtx.fillStyle = `rgba(50, 50, 50, ${relMaxVal})`;
           qCtx.fill();
 
           const vx = action[1];
