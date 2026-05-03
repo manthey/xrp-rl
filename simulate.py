@@ -601,25 +601,24 @@ def update_rewards(dt):
         ball_progress = direction * (bx - prev['ball_x'])
         approach = prev['dist_to_ball'] - dist_to_ball
         reward = 0
-        reward += -0.005 * dt
-        reward += 0.005 * ball_progress
-        reward += 0.0025 * approach
-        reward += 0.001 * max(0, direction * vx) * dt
+        reward += -0.0005 * dt
+        reward += 0.0005 * ball_progress
+        reward += 0.00025 * approach
+        reward += 0.0001 * max(0, direction * vx) * dt
         if abs(vx) > abs(prev.get('ball_vx', 0)) * 1.5 and vx * direction > 0:
-            reward += 10
-        # This wasn't the issue
+            reward += 5
         if dist_to_ball < 200:
             if (rx - bx) * direction < 0:
-                reward += 0.025 * dt
+                reward += 0.0025 * dt
             else:
-                reward -= 0.005 * dt
+                reward -= 0.0005 * dt
         else:
-            reward += -0.001 * dt
+            reward += -0.0001 * dt
         terminal = False
         if new_goal:
             terminal = True
             elapsed = sim_state['sim_time'] - sim_state['sim_start']
-            win_score = 50 + 25 * (1 - min(1, elapsed / EPISODE_MAXIMUM_TIME))
+            win_score = 100 + 50 * (1 - min(1, elapsed / EPISODE_MAXIMUM_TIME))
             reward += (1 if scored_team == team else -1) * win_score
         entry = robot_rewards.setdefault(robot_id, {'reward': 0.0, 'terminal_id': 0})
         entry['reward'] += reward

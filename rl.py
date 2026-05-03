@@ -15,7 +15,7 @@ DEFAULT_ACTIONS = [
 
 
 class QAgent:
-    def __init__(self, team='red', actions=None, alpha=0.1, gamma=0.995,
+    def __init__(self, team='red', actions=None, alpha=0.3, gamma=0.99,
                  epsilon=0.0, softmax=False):
         self.team = team
         self.actions = actions or DEFAULT_ACTIONS
@@ -71,7 +71,7 @@ class QAgent:
             target = reward
         else:
             target = reward + self.gamma * max(self.row(next_state)[0])
-        alpha = max(self.alpha * 0.1, self.alpha / (1 + n[self.last_action]))
+        alpha = max(self.alpha * 0.1, self.alpha / (1 + n[self.last_action] ** 0.5))
         q[self.last_action] = old_value + alpha * (target - old_value)
         n[self.last_action] += 1
 
@@ -99,7 +99,7 @@ class QAgent:
 
     def row(self, state):
         if state not in self.q:
-            self.q[state] = [1] * len(self.actions)
+            self.q[state] = [0] * len(self.actions)
             self.counts[state] = [0] * len(self.actions)
         return self.q[state], self.counts[state]
 
@@ -135,20 +135,20 @@ class QAgent:
         try:
             d = float(distance_cm)
         except Exception:
-            return 7
-        if d < 12.5:
+            d = 65535
+        if d < 7.5:
             return 0
-        if d < 25:
+        if d < 11.6:
             return 1
-        if d < 50:
+        if d < 17.85:
             return 2
-        if d < 100:
+        if d < 27.5:
             return 3
-        if d < 200:
+        if d < 42.25:
             return 4
-        if d < 400:
+        if d < 65:
             return 5
-        if d < 800:
+        if d < 100:
             return 6
         return 7
 
