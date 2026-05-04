@@ -377,8 +377,8 @@ function renderQStateOffscreen() {
     return;
   }
   if (!qCanvas) qCanvas = document.createElement('canvas');
-  qCanvas.width = canvas.width * 2;
-  qCanvas.height = canvas.height * 2;
+  qCanvas.width = canvas.width;
+  qCanvas.height = canvas.height;
   const qCtx = qCanvas.getContext('2d');
   qCtx.clearRect(0, 0, qCanvas.width, qCanvas.height);
 
@@ -530,7 +530,7 @@ function drawRobots() {
 
 function render() {
   computeLayout();
-  if (qData && (!qCanvas || qCanvas.width !== canvas.width * 2 || qCanvas.height !== canvas.height * 2)) {
+  if (qData && (!qCanvas || qCanvas.width !== canvas.width || qCanvas.height !== canvas.height)) {
     renderQStateOffscreen();
   }
   drawField();

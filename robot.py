@@ -27,6 +27,9 @@ except ImportError:
 
     is_simulation = True
 
+ACTION_HZ = 4
+POSE_REPORT_HZ = 10
+
 if is_simulation:  # noqa
     parser = argparse.ArgumentParser()
     parser.add_argument('--simulator', default='http://127.0.0.1:8080')
@@ -163,7 +166,7 @@ if is_simulation:  # noqa
 
         def send_pose(self, pose):
             now = self.sim_time
-            if now - self.last_pf_report < 0.25:
+            if now - self.last_pf_report < 1 / POSE_REPORT_HZ:
                 return
             data = {
                 'robot_id': self.robot_id,
@@ -323,7 +326,7 @@ while True:  # noqa
             straight, turn = agent.command(action)
             drivetrain.arcade(straight, turn)
             agent.remember(state, action)
-            next_action_time = max(now, next_action_time + 0.25)
+            next_action_time = max(now, next_action_time + 1 / ACTION_HZ)
         if is_simulation and virtual_robot.reset:
             virtual_robot.reset = False
             virtual_robot.needs_episode_end = True
