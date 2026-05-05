@@ -20,7 +20,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
 from util import (BALL_RADIUS_MM, CORNER_MEET, CORNER_RADIUS_MM,
@@ -561,7 +561,7 @@ def scored_goal_team():
     return None
 
 
-def update_rewards(dt):  # noqa
+def update_rewards(dt):
     scored_team = scored_goal_team()
     over_time = sim_state['run_start_time'] and (
         sim_state['sim_time'] - sim_state['sim_start'] > EPISODE_MAXIMUM_TIME)
@@ -978,12 +978,12 @@ async def websocket_endpoint(ws: WebSocket):
 
 
 @app.get('/q_files/list')
-def q_files_list():
+async def q_files_list():
     return {'files': [os.path.splitext(os.path.basename(f))[0] for f in sim_state['q_files']]}
 
 
 @app.get('/q_files/{index}')
-def q_files_index(index: int):
+async def q_files_index(index: int):
     try:
         with open(sim_state['q_files'][index]) as f:
             return json.load(f)
@@ -992,7 +992,7 @@ def q_files_index(index: int):
 
 
 @app.get('/train')
-def set_train(active: bool):
+async def set_train(active: bool):
     if active and not sim_state['training']:
         sim_state['training'] = True
         reset_episode()
@@ -1008,6 +1008,12 @@ def build_html(config: dict) -> str:
     html = html.replace('MAINSCRIPT', open(
         os.path.join(os.path.dirname(__file__), 'render.js')).read())
     return html.replace('CONFIG_JSON', json.dumps(config))
+
+
+@app.get('/qworker.js')
+async def get_javascript() -> Response:
+    js = open('qworker.js').read()
+    return Response(content=js, media_type='application/javascript')
 
 
 @app.get('/', response_class=HTMLResponse)

@@ -13,6 +13,7 @@ let ws = null;
 
 let qFiles = [];
 let qIndex = -1;
+let qQueryNum = 0;
 let qvIndex = 0;
 let qData = null;
 let qAverages = null;
@@ -213,7 +214,8 @@ async function toggleQState() {
     }
   }
   if (qFiles.length === 0) return;
-
+  qQueryNum += 1;
+  const queryNum = qQueryNum;
   if (qIndex < 0) {
     qIndex = 0;
     qvIndex = 0;
@@ -237,8 +239,14 @@ async function toggleQState() {
   try {
     const res = await fetch(`/q_files/${qIndex}`);
     qData = await res.json();
+    if (queryNum !== qQueryNum) {
+      return;
+    }
     processQData(qData);
     qCanvas = null;
+    if (queryNum !== qQueryNum) {
+      return;
+    }
     render();
   } catch (e) {
     qData = null;
@@ -383,7 +391,7 @@ function renderQStateOffscreen() {
   qCtx.clearRect(0, 0, qCanvas.width, qCanvas.height);
 
   const { maxX, maxY, maxH, maxP1, minMaxVal, maxMaxVal } = qGridInfo;
-  const maxValRange = (maxMaxVal - minMaxVal) || 1;
+  const maxValRange = maxMaxVal - minMaxVal || 1;
   const binW = CONFIG.field_length_mm / (maxX + 1);
   const binH = CONFIG.field_width_mm / (maxY + 1);
   const maxR = Math.min(binW, binH) * 0.48;
