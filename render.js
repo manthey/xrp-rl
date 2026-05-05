@@ -357,7 +357,7 @@ function drawField() {
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(ox, oy + sy * fh2);
-      ctx.lineTo(ox + sx * (cm - cb), oy + sy * fh2);
+      ctx.lineTo(ox + sx * cm, oy + sy * fh2);
       ctx.lineTo(ox + sx * cm, oy + sy * (fh2 - cb));
       const ang = Math.atan2(sy * (fh2 - cb - gw2), -sx * (fw2 - r - cm));
       ctx.arc(ox + sx * (fw2 - r), oy + sy * gw2, r, ang, sx > 0 ? 0 : Math.PI, sx * sy > 0);
