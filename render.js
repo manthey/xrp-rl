@@ -383,7 +383,7 @@ function renderQStateOffscreen() {
   qCtx.clearRect(0, 0, qCanvas.width, qCanvas.height);
 
   const { maxX, maxY, maxH, maxP1, minMaxVal, maxMaxVal } = qGridInfo;
-  const maxValRange = maxMaxVal - minMaxVal || 1;
+  const maxValRange = (maxMaxVal - minMaxVal) || 1;
   const binW = CONFIG.field_length_mm / (maxX + 1);
   const binH = CONFIG.field_width_mm / (maxY + 1);
   const maxR = Math.min(binW, binH) * 0.48;

@@ -5,12 +5,12 @@ import random
 from util import FIELD_LENGTH_MM, FIELD_WIDTH_MM
 
 DEFAULT_ACTIONS = [
-    # ('stop', 0.0, 0.0),  # must be 0-th action
-    ('forward_slow', 0.5, 0.0),
-    ('Forward_fast', 1, 0.0),
-    ('Reverse_fast', -1, 0.0),
-    ('left_turn', 0.0, -1),
-    ('right_turn', 0.0, 1),
+    # ('stop', 0.0, 0.0, []),
+    ('forward_slow', 0.5, 0.0, []),
+    ('Forward_fast', 1, 0.0, []),
+    ('Back_fast', -1, 0.0, []),
+    ('Left_turn_fast', 0.0, -1, ['Right_turn_fast', ]),
+    ('Right_turn_fast', 0.0, 1, ['Left_turn_fast', ]),
 ]
 
 
@@ -19,6 +19,8 @@ class QAgent:
                  epsilon=0.0, softmax=False):
         self.team = team
         self.actions = actions or DEFAULT_ACTIONS
+        actIdx = {self.actions[i][0]: i for i in range(len(self.actions))}
+        self.disallowed = [set(actIdx.get(name, -1) for name in act[3]) for act in self.actions]
         self.alpha = alpha
         self.gamma = gamma
         self.epsilon = epsilon
@@ -26,7 +28,7 @@ class QAgent:
         self.q = {}
         self.counts = {}
         self.last_state = None
-        self.last_action = 0
+        self.last_action = None
 
     def load(self, path):
         try:
@@ -52,18 +54,20 @@ class QAgent:
             return False
 
     def command(self, action_index):
-        return tuple(self.actions[action_index][1:])
+        if action_index is None:
+            return 0, 0
+        return tuple(self.actions[action_index][1:3])
 
     def reset_episode(self):
         self.last_state = None
-        self.last_action = 0
+        self.last_action = None
 
     def remember(self, state, action):
         self.last_state = state
         self.last_action = action
 
     def learn_from_transition(self, next_state, reward, terminal=False):
-        if self.last_state is None:
+        if self.last_state is None or self.last_action is None:
             return
         q, n = self.row(self.last_state)
         old_value = q[self.last_action]
@@ -82,19 +86,23 @@ class QAgent:
                 return opt
             r -= w
 
-    def choose_action(self, state):
+    def choose_action(self, state, last_action):
         q, n = self.row(state)
-        maxq = max(q)
+        if last_action is None:
+            act = list(range(len(self.actions)))
+        else:
+            act = [a for a in range(len(self.actions)) if a not in self.disallowed[last_action]]
+        maxq = max([q[a] for a in act])
         if self.epsilon > 0:
             sumn = sum(n)
             epsilon = max(self.epsilon * 0.2, self.epsilon / ((sumn + 1) ** 0.5))
             if random.random() < epsilon:
                 w = [1 / (nv + 1) for nv in n]
-                return self.weighted_choice(range(len(self.actions)), w)
+                return self.weighted_choice(act, w)
         if self.softmax:
             w = [math.exp(qv - maxq) for qv in q]
             return self.weighted_choice(range(len(self.actions)), w)
-        best = [i for i, value in enumerate(q) if value == maxq]
+        best = [a for a in act if q[a] == maxq]
         return random.choice(best)
 
     def row(self, state):
@@ -116,7 +124,7 @@ class QAgent:
             heading = (180.0 + heading) % 360.0
         x_bin = self.bin_value(x, -FIELD_LENGTH_MM / 2, FIELD_LENGTH_MM / 2, 15)
         y_bin = self.bin_value(y, -FIELD_WIDTH_MM / 2, FIELD_WIDTH_MM / 2, 7)
-        heading_bin = self.bin_value(((heading + 22.5) % 360.0), 0, 360, 16)
+        heading_bin = self.bin_value(((heading + 360 + 22.5) % 360.0), 0, 360, 16)
         distance_bin = self.distance_bin(distance_cm)
         confidence_bin = self.confidence_bin(std_x, std_y, std_heading)
         return '%d,%d,%d,%d,%d,%d' % (
@@ -125,7 +133,7 @@ class QAgent:
             heading_bin,
             distance_bin,
             confidence_bin,
-            previous_action,
+            previous_action or 0,
         )
 
     def bin_value(self, value, low, high, count):

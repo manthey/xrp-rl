@@ -322,7 +322,7 @@ while True:  # noqa
                 if robot_mode == 'train' and time.time() - last_save > 10:
                     agent.save(q_file)
                     last_save = time.time()
-            action = agent.choose_action(state)
+            action = agent.choose_action(state, agent.last_action)
             straight, turn = agent.command(action)
             drivetrain.arcade(straight, turn)
             agent.remember(state, action)
