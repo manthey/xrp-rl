@@ -26,7 +26,6 @@ MM_PER_TICK = math.pi * WHEEL_DIAMETER_MM / TICKS_PER_REV
 MAX_WHEEL_SPEED_MMPS = 250.0
 INERTIA_MMPS_PER_TICK = 50.0
 
-print(CORNER_MEET, FIELD_LENGTH_MM / 2)
 TAPE_LINES = [
     {'x_mm': -FIELD_LENGTH_MM / 4, 'color': 'blue', 'rel': 0.23},
     {'x_mm': FIELD_LENGTH_MM / 4, 'color': 'red', 'rel': 0.24},

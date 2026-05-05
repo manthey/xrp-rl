@@ -561,7 +561,7 @@ def scored_goal_team():
     return None
 
 
-def update_rewards(dt):
+def update_rewards(dt):  # noqa
     scored_team = scored_goal_team()
     over_time = sim_state['run_start_time'] and (
         sim_state['sim_time'] - sim_state['sim_start'] > EPISODE_MAXIMUM_TIME)
@@ -581,6 +581,7 @@ def update_rewards(dt):
     bx = ball_state['world_x_mm']
     by = ball_state['world_y_mm']
     vx = ball_state['vel_x_mmps']
+    vy = ball_state['vel_x_mmps']
     for robot_id, robot in robots.items():
         rx = robot.get('world_x_mm')
         ry = robot.get('world_y_mm')
@@ -605,6 +606,20 @@ def update_rewards(dt):
         reward += 0.0005 * ball_progress
         reward += 0.00025 * approach
         reward += 0.0001 * max(0, direction * vx) * dt
+        if (vx * direction > 0 and
+                abs(by + vy / vx * (FIELD_LENGTH_MM / 2 - bx)) < GOAL_WIDTH_MM / 2):
+            reward += 0.01 * max(0, direction * vx) * dt
+        if 'rx' in prev:
+            dx = rx - bx
+            dy = ry - by
+            rvx = (rx - prev['rx']) / dt
+            rvy = (ry - prev['ry']) / dt
+            ux = rvx - vx
+            uy = rvy - vy
+            if (rvx * direction > 0 and (ux or uy) and
+                    abs(ry + rvy / rvx * (FIELD_LENGTH_MM / 2 - rx)) < GOAL_WIDTH_MM / 2 and
+                    abs(dx * uy - dy * ux) / (ux**2 + uy**2)**0.5 < ROBOT_WIDTH_MM / 2):
+                reward += 0.001 * max(0, direction * rvx) * dt
         if abs(vx) > abs(prev.get('ball_vx', 0)) * 1.5 and vx * direction > 0:
             reward += 5
         if dist_to_ball < 200:
@@ -628,6 +643,8 @@ def update_rewards(dt):
         prev['ball_y'] = by
         prev['dist_to_ball'] = dist_to_ball
         prev['ball_vx'] = vx
+        prev['rx'] = rx
+        prev['ry'] = ry
 
 
 def broadcast_key(message: dict) -> tuple:
