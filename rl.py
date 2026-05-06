@@ -66,18 +66,21 @@ class QAgent:
         self.last_state = state
         self.last_action = action
 
-    def learn_from_transition(self, next_state, reward, terminal=False):
-        if self.last_state is None or self.last_action is None:
+    def learn_from_transition(self, next_state, reward, terminal=False, last_state=None, last_action=None, increment=None):
+        increment = (0 if last_state is not None else 1) if increment is None else increment
+        last_state = self.last_state if last_state is None else self.last_state
+        last_action = self.last_action if last_action is None else self.last_action
+        if last_state is None or last_action is None:
             return
-        q, n = self.row(self.last_state)
-        old_value = q[self.last_action]
+        q, n = self.row(last_state)
+        old_value = q[last_action]
         if terminal:
             target = reward
         else:
             target = reward + self.gamma * max(self.row(next_state)[0])
         alpha = max(self.alpha * 0.1, self.alpha / (1 + n[self.last_action] ** 0.5))
-        q[self.last_action] = old_value + alpha * (target - old_value)
-        n[self.last_action] += 1
+        q[last_action] = old_value + alpha * (target - old_value)
+        n[last_action] += increment
 
     def weighted_choice(self, options, weights):
         r = random.random() * sum(weights)

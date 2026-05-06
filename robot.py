@@ -76,6 +76,8 @@ if is_simulation:  # noqa
             self.pending_terminal = False
             self.reset = False
             self.last_command = None
+            self.last_contact = None
+            self.last_state_action = None
 
         def build_ws_url(self, url):
             parsed = urlparse(url)
@@ -147,6 +149,12 @@ if is_simulation:  # noqa
                 self.sim_start = data.get('sim_start', self.sim_start)
                 self.sim_time = data.get('sim_time', self.sim_time or time.time())
                 reward_total = float(data.get('reward_total', self.reward_total))
+                if (data.get('last_contact') or {}).get('robot_id') != self.robot_id:
+                    self.last_contact = None
+                elif not self.last_contact or self.last_contact['contact_id'] != data['last_contact']['contact_id']:
+                    self.last_contact = data['last_contact']
+                    self.last_state_action = None
+
                 terminal_id = int(data.get('terminal_id', self.terminal_id))
                 if terminal_id != self.terminal_id:
                     self.terminal_id = terminal_id
@@ -280,11 +288,14 @@ agent.load(q_file)
 last_save = time.time()
 next_action_time = 0
 last_print = 0
+state = action = None
 
 while True:  # noqa
     if pestolink.is_connected():
         if is_simulation:
             virtual_robot.wait_state()
+            if virtual_robot.last_state_action is None:
+                virtual_robot.last_state_action = (state, action)
             if virtual_robot.reset and not virtual_robot.pending_terminal:
                 virtual_robot.reset = False
                 virtual_robot.needs_episode_end = True
@@ -316,7 +327,11 @@ while True:  # noqa
             terminal = False
             if is_simulation and robot_mode == 'train':
                 reward, terminal = virtual_robot.get_reward()
-            agent.learn_from_transition(state, reward, terminal)
+            if not force or virtual_robot.last_state_action is None or not virtual_robot.reset or not terminal or not reward:
+                agent.learn_from_transition(state, reward, terminal)
+            else:
+                agent.learn_from_transition(state, reward, terminal, virtual_robot.last_state_action[0], virtual_robot.last_state_action[1], 0)
+                print(virtual_robot.last_state_action, agent.last_state, agent.last_action, state, action, virtual_robot.reset, reward)
             if terminal:
                 agent.reset_episode()
                 if robot_mode == 'train' and time.time() - last_save > 10:

@@ -56,7 +56,7 @@ robot_rewards: dict[str, dict] = {}
 reward_memory: dict[str, dict] = {}
 sim_state = {'training': False, 'episode_finished': False, 'restart': None,
              'run_number': 0, 'run_start_time': None, 'sim_time': 0.0,
-             'run_record': [],
+             'run_record': [], 'last_contact': {'contact_id': 0},
              'synced_robots': set(), 'sim_start': 0.0, 'fast': False}
 pending_broadcasts: dict[tuple, dict] = {}
 
@@ -157,6 +157,7 @@ async def send_robot_state(robot_id: str, ws: WebSocket):
             'sim_time': sim_state['sim_time'],
             'reward_total': reward['reward'],
             'terminal_id': reward['terminal_id'],
+            'last_contact': sim_state['last_contact'],
         }
     }), timeout=0.5)
     if reset:
@@ -185,6 +186,7 @@ def reset_episode():
     sim_state['run_number'] += 1
     sim_state['run_start_time'] = time.time()
     sim_state['sim_start'] = sim_state['sim_time']
+    sim_state['last_contact'] = {'contact_id': sim_state['last_contact']['contact_id']}
     for team in ('red', 'blue'):
         robot_ids = sorted(rid for rid, robot in robots.items() if robot.get('team', 'red') == team)
         base_x = (-1 if team == 'red' else 1) * FIELD_LENGTH_MM * 3 / 8
@@ -477,7 +479,7 @@ def collide_ball_with_robot(bx, by, vx, vy, robot):
     rx = robot.get('world_x_mm')
     ry = robot.get('world_y_mm')
     if rx is None or ry is None:
-        return bx, by, vx, vy
+        return bx, by, vx, vy, False
     heading_rad = math.radians(robot.get('world_heading_deg', 0))
     cpx, cpy, inside = closest_point_on_rounded_rect(
         bx, by, rx, ry, ROBOT_LENGTH_MM / 2, ROBOT_WIDTH_MM / 2,
@@ -485,7 +487,7 @@ def collide_ball_with_robot(bx, by, vx, vy, robot):
     dx, dy = bx - cpx, by - cpy
     dist = math.sqrt(dx * dx + dy * dy)
     if not inside and dist >= BALL_RADIUS_MM:
-        return bx, by, vx, vy
+        return bx, by, vx, vy, False
     if dist > 0:
         sign = -1.0 if inside else 1.0
         nx, ny = sign * dx / dist, sign * dy / dist
@@ -503,11 +505,12 @@ def collide_ball_with_robot(bx, by, vx, vy, robot):
     robot_vx = forward_speed * fwd_x - angular_speed * contact_ry
     robot_vy = forward_speed * fwd_y + angular_speed * contact_rx
     rel_dot = (vx - robot_vx) * nx + (vy - robot_vy) * ny
+    impulse = 0
     if rel_dot < 0:
         impulse = -(1 + RESTITUTION) * rel_dot
         vx += impulse * nx
         vy += impulse * ny
-    return bx, by, vx, vy
+    return bx, by, vx, vy, bool(impulse)
 
 
 def apply_friction(vx, vy, dt):
@@ -748,8 +751,17 @@ async def simulation_loop():  # noqa
         by = ball_state['world_y_mm']
         bx += vx * dt
         by += vy * dt
-        for robot in robots.values():
-            bx, by, vx, vy = collide_ball_with_robot(bx, by, vx, vy, robot)
+        contacts = []
+        for robot_id, robot in robots.items():
+            bx, by, vx, vy, contact = collide_ball_with_robot(bx, by, vx, vy, robot)
+            if contact:
+                sim_state['last_contact']['contact_id'] += 1
+                sim_state['last_contact']['last_robot_id'] = sim_state['last_contact'].get('robot_id')
+                sim_state['last_contact']['last_team'] = sim_state['last_contact'].get('team')
+                sim_state['last_contact']['last_sim_time'] = sim_state['last_contact'].get('sim_time')
+                sim_state['last_contact']['robot_id'] = robot_id
+                sim_state['last_contact']['team'] = robot['team']
+                sim_state['last_contact']['sim_time'] = sim_state['sim_time']
         bx, by, vx, vy = field_boundary_response(bx, by, vx, vy, BALL_RADIUS_MM)
         vx, vy = apply_friction(vx, vy, dt)
         ball_state['world_x_mm'] = bx
