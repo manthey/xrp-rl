@@ -289,13 +289,15 @@ last_save = time.time()
 next_action_time = 0
 last_print = 0
 state = action = None
+last_state = last_action = None
+pose = None
 
 while True:  # noqa
     if pestolink.is_connected():
         if is_simulation:
             virtual_robot.wait_state()
-            if virtual_robot.last_state_action is None:
-                virtual_robot.last_state_action = (state, action)
+            if virtual_robot.last_state_action is None and last_state is not None:
+                virtual_robot.last_state_action = (last_state, last_action, state, action)
             if virtual_robot.reset and not virtual_robot.pending_terminal:
                 virtual_robot.reset = False
                 virtual_robot.needs_episode_end = True
@@ -314,7 +316,8 @@ while True:  # noqa
         refl_r = reflectance.get_right()
         heading = board.imu.get_heading()
         pf.step(left_ticks, right_ticks, distance_cm, refl_l, refl_r, heading)
-        pose = pf.get_pose_with_error()
+        if not is_simulation or left_ticks or right_ticks or not pose:
+            pose = pf.get_pose_with_error()
         if is_simulation:
             virtual_robot.send_pose(pose)
         if not next_action_time:
@@ -322,6 +325,8 @@ while True:  # noqa
         force = is_simulation and virtual_robot.pending_terminal
         if robot_mode != 'manual' and (force or now >= next_action_time) and (
                 robot_mode != 'train' or virtual_robot.training):
+            last_state = state
+            last_action = action
             state = agent.discretize(pose, distance_cm, refl_l, refl_r, agent.last_action)
             reward = 0
             terminal = False
@@ -330,8 +335,10 @@ while True:  # noqa
             if not force or virtual_robot.last_state_action is None or not virtual_robot.reset or not terminal or not reward:
                 agent.learn_from_transition(state, reward, terminal)
             else:
-                agent.learn_from_transition(state, reward, terminal, virtual_robot.last_state_action[0], virtual_robot.last_state_action[1], 0)
-                print(virtual_robot.last_state_action, agent.last_state, agent.last_action, state, action, virtual_robot.reset, reward)
+                agent.learn_from_transition(
+                    virtual_robot.last_state_action[2], reward, terminal, virtual_robot.last_state_action[2], virtual_robot.last_state_action[3], 0)
+                print(virtual_robot.last_state_action, agent.last_state, agent.last_action,
+                      state, action, virtual_robot.reset, reward, pose, virtual_robot.__dict__)
             if terminal:
                 agent.reset_episode()
                 if robot_mode == 'train' and time.time() - last_save > 10:
