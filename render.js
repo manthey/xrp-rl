@@ -18,6 +18,9 @@ let qvIndex = 0;
 let qData = null;
 let qGridInfo = null;
 let qCanvas = null;
+let qRosette = false;
+let qClickX = 0;
+let qClickY = 0;
 const qWorker = new Worker('qworker.js');
 
 qWorker.onmessage = (e) => {
@@ -206,6 +209,9 @@ async function hideExtended() {
   const div = document.getElementById('extended');
   div.classList.toggle('hidden');
   btn.textContent = div.classList.contains('hidden') ? 'Show' : 'Hide';
+  render();
+  qQueryNum += 1;
+  postRender();
 }
 
 async function toggleQState() {
@@ -242,9 +248,18 @@ async function toggleQState() {
   }
   const desc = ['', ' (dist)', ' (acc)', ' (prev)'];
   btn.textContent = `Visualize: ${qFiles[qIndex]}${desc[qvIndex]}`;
+  postRender();
+}
+function postRender() {
+  if (qIndex === qFiles.length || qIndex < 0) {
+    return;
+  }
+  const type = qRosette ? 'render_rosette' : 'render';
   try {
-    qWorker.postMessage({
-      type: 'render',
+    const queryNum = qQueryNum;
+    const type = qRosette ? 'render_rosette' : 'render';
+    const payload = {
+      type,
       queryNum,
       qIndex,
       qvIndex,
@@ -253,8 +268,14 @@ async function toggleQState() {
       scale,
       gd,
       config: CONFIG,
-    });
+    };
+    if (qRosette) {
+      payload.clickX = qClickX * canvas.width;
+      payload.clickY = qClickY * canvas.height;
+    }
+    qWorker.postMessage(payload);
   } catch (e) {
+    console.log(e);
     qData = null;
     qCanvas = null;
   }
@@ -490,7 +511,21 @@ function updateTrainingInfo(state) {
   }
 }
 
-window.addEventListener('resize', render);
+window.addEventListener('resize', () => {
+  render();
+  qQueryNum += 1;
+  postRender();
+});
+
+canvas.addEventListener('click', (e) => {
+  if (qIndex < 0) return;
+  const rect = canvas.getBoundingClientRect();
+  qClickX = (e.clientX - rect.left) / canvas.width;
+  qClickY = (e.clientY - rect.top) / canvas.height;
+  qRosette = !qRosette;
+  qQueryNum += 1;
+  postRender();
+});
 
 function onWsMessage(event) {
   const msg = JSON.parse(event.data);
