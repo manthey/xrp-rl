@@ -24,13 +24,19 @@ function processQData(data, qvIndex) {
     const subKey = `${x},${y},${h},${p1}`;
     if (!sums[subKey]) sums[subKey] = { q: data.q[key].map(() => 0), c: 0 };
     const qVals = data.q[key];
-    for (let i = 0; i < qVals.length; i++) sums[subKey].q[i] += qVals[i];
+    for (let i = 0; i < qVals.length; i++) {
+      sums[subKey].q[i] += qVals[i];
+      // to do max instead of average
+      // sums[subKey].q[i] = Math.max(sums[subKey].q[i], qVals[i]);
+    }
     sums[subKey].c++;
   }
 
   let minMaxVal, maxMaxVal;
   for (const key in sums) {
     const avg = sums[key].q.map((v) => v / sums[key].c);
+    // for max instead of average
+    // const avg = sums[key].q.map((v) => v);
     let maxIdx = 0;
     let maxVal = -Infinity;
     for (let i = 0; i < avg.length; i++) {
