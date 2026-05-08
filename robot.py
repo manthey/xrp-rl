@@ -67,6 +67,7 @@ if is_simulation:  # noqa
             self.last_pf_report = 0.0
             self.sim_time = 0.0
             self.sim_start = 0.0
+            self.world = {}
             self.training = False
             self.episodes = [0, 0, 0, []]
             self.terminal_reward = None
@@ -148,10 +149,15 @@ if is_simulation:  # noqa
                 self.training = data.get('training', self.training)
                 self.sim_start = data.get('sim_start', self.sim_start)
                 self.sim_time = data.get('sim_time', self.sim_time or time.time())
+                if 'ball' in data:
+                    self.world['ball'] = data['ball']
+                if 'ronots' in data:
+                    self.world['robots'] = data['robots']
                 reward_total = float(data.get('reward_total', self.reward_total))
                 if (data.get('last_contact') or {}).get('robot_id') != self.robot_id:
                     self.last_contact = None
-                elif not self.last_contact or self.last_contact['contact_id'] != data['last_contact']['contact_id']:
+                elif (not self.last_contact or
+                        self.last_contact['contact_id'] != data['last_contact']['contact_id']):
                     self.last_contact = data['last_contact']
                     self.last_state_action = None
 
@@ -332,11 +338,13 @@ while True:  # noqa
             terminal = False
             if is_simulation and robot_mode == 'train':
                 reward, terminal = virtual_robot.get_reward()
-            if not force or virtual_robot.last_state_action is None or not virtual_robot.reset or not terminal or not reward:
+            if (not force or virtual_robot.last_state_action is None or
+                    not virtual_robot.reset or not terminal or not reward):
                 agent.learn_from_transition(state, reward, terminal)
             else:
                 agent.learn_from_transition(
-                    virtual_robot.last_state_action[2], reward, terminal, virtual_robot.last_state_action[2], virtual_robot.last_state_action[3], 0)
+                    virtual_robot.last_state_action[2], reward, terminal,
+                    virtual_robot.last_state_action[2], virtual_robot.last_state_action[3], 0)
             if terminal:
                 agent.reset_episode()
                 if robot_mode == 'train' and time.time() - last_save > 10:

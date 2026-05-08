@@ -564,7 +564,7 @@ def scored_goal_team():
     return None
 
 
-def update_rewards(dt):
+def update_rewards(dt):  # noqa
     scored_team = scored_goal_team()
     over_time = sim_state['run_start_time'] and (
         sim_state['sim_time'] - sim_state['sim_start'] > EPISODE_MAXIMUM_TIME)
@@ -606,10 +606,11 @@ def update_rewards(dt):
         approach = prev['dist_to_ball'] - dist_to_ball
         reward = 0
         reward += -0.0005 * dt
-        # reward += 0.0005 * ball_progress
-        # reward += 0.00025 * approach
-        # reward += 0.0001 * max(0, direction * vx) * dt
-        # reward += 0.0001 * direction * vx * dt
+        if False:
+            reward += 0.0005 * ball_progress
+            reward += 0.00025 * approach
+            reward += 0.0001 * max(0, direction * vx) * dt
+            reward += 0.0001 * direction * vx * dt
         if (vx * direction > 0 and
                 abs(by + vy / vx * (FIELD_LENGTH_MM / 2 - bx)) < GOAL_WIDTH_MM / 2):
             reward += 0.1 * max(0, direction * vx) * dt
@@ -622,19 +623,20 @@ def update_rewards(dt):
             uy = rvy - vy
             ux, uy = rvx, rvy  # ##DWM::
             if (rvx * direction > 0 and (ux or uy) and
-                    (bx - rx) * direction > 0 and abs(by + rvy / rvx * (FIELD_LENGTH_MM / 2 - bx)) < GOAL_WIDTH_MM / 2 and
-                    # abs(ry + rvy / rvx * (FIELD_LENGTH_MM / 2 - rx)) < GOAL_WIDTH_MM / 2 and
+                    (bx - rx) * direction > 0 and
+                    abs(by + rvy / rvx * (FIELD_LENGTH_MM / 2 - bx)) < GOAL_WIDTH_MM / 2 and
                     abs(dx * uy - dy * ux) / (ux**2 + uy**2)**0.5 < ROBOT_WIDTH_MM / 2):
                 reward += 0.1 * max(0, direction * rvx) * dt
         if abs(vx) > abs(prev.get('ball_vx', 0)) * 1.5 and vx * direction > 0:
             reward += 5
-        # if dist_to_ball < 200:
-        #     if (rx - bx) * direction < 0:
-        #         reward += 0.0025 * dt
-        #     else:
-        #         reward -= 0.0005 * dt
-        # else:
-        #     reward += -0.0001 * dt
+        if False:
+            if dist_to_ball < 200:
+                if (rx - bx) * direction < 0:
+                    reward += 0.0025 * dt
+                else:
+                    reward -= 0.0005 * dt
+            else:
+                reward += -0.0001 * dt
         terminal = False
         if new_goal:
             terminal = True
@@ -751,7 +753,6 @@ async def simulation_loop():  # noqa
         by = ball_state['world_y_mm']
         bx += vx * dt
         by += vy * dt
-        contacts = []
         for robot_id, robot in robots.items():
             bx, by, vx, vy, contact = collide_ball_with_robot(bx, by, vx, vy, robot)
             if contact:
@@ -800,6 +801,12 @@ async def simulation_loop():  # noqa
                     'run_start_time': sim_state['run_start_time'],
                     'sim_start': sim_state['sim_start'],
                     'sim_time': sim_state['sim_time'],
+                    'ball': ball_state,
+                    'robots': {robot_id: {
+                        'world_x_mm': robot['world_x_mm'],
+                        'world_y_mm': robot['world_y_mm'],
+                        'world_heading_deg': robot['world_heading_deg'],
+                    } for robot_id, robot in robots.items()},
                 }
             })
 

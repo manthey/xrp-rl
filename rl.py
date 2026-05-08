@@ -42,6 +42,7 @@ class QAgent:
 
     def save(self, path):
         data = {
+            'axes': ['x', 'y', 'heading', 'dist', 'acc', 'prev'],
             'actions': [list(a) for a in self.actions],
             'q': self.q,
             'counts': self.counts,
@@ -66,7 +67,9 @@ class QAgent:
         self.last_state = state
         self.last_action = action
 
-    def learn_from_transition(self, next_state, reward, terminal=False, last_state=None, last_action=None, increment=None):
+    def learn_from_transition(
+            self, next_state, reward, terminal=False, last_state=None,
+            last_action=None, increment=None):
         increment = (0 if last_state is not None else 1) if increment is None else increment
         last_state = self.last_state if last_state is None else self.last_state
         last_action = self.last_action if last_action is None else self.last_action

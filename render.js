@@ -24,11 +24,15 @@ let qRosette = false;
 let qClickX = 0;
 let qClickY = 0;
 let qCacheAllowed = false;
+let qAxes = ['x', 'y', 'heading', 'dist', 'acc', 'prev'];
 let lastWorkerRender = { when: 0, run_number: -1, last_run_number: -1 };
 const qWorker = new Worker('qworker.js');
 
 qWorker.onmessage = (e) => {
   if (e.data.queryNum !== qQueryNum) return;
+  if (e.data.axes) {
+    qAxes = e.data.axes;
+  }
   qCanvas = e.data.bitmap;
   render();
   lastWorkerRender.when = Date.now();
@@ -237,7 +241,7 @@ async function toggleQState() {
     qIndex = 0;
     qvIndex = 0;
   } else {
-    qvIndex = (qvIndex + 1) % 4;
+    qvIndex = (qvIndex + 1) % (qAxes.length - 2);
     if (!qvIndex) {
       qIndex = (qIndex + 1) % (qFiles.length + 1);
     }
@@ -252,8 +256,11 @@ async function toggleQState() {
       return;
     }
   }
-  const desc = ['', ' (dist)', ' (acc)', ' (prev)'];
-  btn.textContent = `${qFiles[qIndex]}${desc[qvIndex]}`;
+  let desc = '';
+  if (qvIndex) {
+    desc = ` (${qAxes[qvIndex + 2]})`;
+  }
+  btn.textContent = `${qFiles[qIndex]}${desc}`;
   postRender();
 }
 

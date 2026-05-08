@@ -210,7 +210,7 @@ async function renderQState(msg) {
   }
 
   const bitmap = canvas.transferToImageBitmap();
-  postMessage({ queryNum: msg.queryNum, bitmap }, [bitmap]);
+  postMessage({ queryNum: msg.queryNum, bitmap, axes: data.axes }, [bitmap]);
 }
 
 onmessage = (e) => {
