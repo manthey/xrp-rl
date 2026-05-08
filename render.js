@@ -23,6 +23,7 @@ let qCanvas = null;
 let qRosette = false;
 let qClickX = 0;
 let qClickY = 0;
+let qCacheAllowed = false;
 const qWorker = new Worker('qworker.js');
 
 qWorker.onmessage = (e) => {
@@ -242,6 +243,7 @@ async function toggleQState() {
       qIndex = -1;
       qData = null;
       qCanvas = null;
+      qCacheAllowed = false;
       qWorker.postMessage({ type: 'clear', queryNum });
       btn.textContent = 'Visualize';
       render();
@@ -279,6 +281,7 @@ function postRender() {
       height: canvas.height,
       scale,
       gd,
+      qCacheAllowed,
       config: CONFIG,
     };
     if (qRosette) {
@@ -286,6 +289,7 @@ function postRender() {
       payload.clickY = qClickY * canvas.height;
     }
     qWorker.postMessage(payload);
+    qCacheAllowed = true;
   } catch (e) {
     console.log(e);
     qData = null;

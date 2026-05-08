@@ -337,8 +337,6 @@ while True:  # noqa
             else:
                 agent.learn_from_transition(
                     virtual_robot.last_state_action[2], reward, terminal, virtual_robot.last_state_action[2], virtual_robot.last_state_action[3], 0)
-                print(virtual_robot.last_state_action, agent.last_state, agent.last_action,
-                      state, action, virtual_robot.reset, reward, pose, virtual_robot.__dict__)
             if terminal:
                 agent.reset_episode()
                 if robot_mode == 'train' and time.time() - last_save > 10:

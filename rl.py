@@ -20,7 +20,7 @@ class QAgent:
         self.team = team
         self.actions = actions or DEFAULT_ACTIONS
         actIdx = {self.actions[i][0]: i for i in range(len(self.actions))}
-        self.disallowed = [set(actIdx.get(name, -1) for name in act[3]) for act in self.actions]
+        self.disallowed = [{actIdx.get(name, -1) for name in act[3]} for act in self.actions]
         self.alpha = alpha
         self.gamma = gamma
         self.epsilon = epsilon
@@ -74,7 +74,7 @@ class QAgent:
             return
         q, n = self.row(last_state)
         old_value = q[last_action]
-        if terminal:
+        if terminal or not increment:
             target = reward
         else:
             target = reward + self.gamma * max(self.row(next_state)[0])
@@ -97,10 +97,10 @@ class QAgent:
             act = [a for a in range(len(self.actions)) if a not in self.disallowed[last_action]]
         maxq = max([q[a] for a in act])
         if self.epsilon > 0:
-            sumn = sum(n)
+            sumn = sum(n[a] for a in act)
             epsilon = max(self.epsilon * 0.2, self.epsilon / ((sumn + 1) ** 0.5))
             if random.random() < epsilon:
-                w = [1 / (nv + 1) for nv in n]
+                w = [1 / (n[a] + 1) for a in act]
                 return self.weighted_choice(act, w)
         if self.softmax:
             w = [math.exp(qv - maxq) for qv in q]

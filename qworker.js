@@ -83,7 +83,7 @@ async function renderQState(msg) {
 
   const cacheKey = `${msg.qIndex}`;
   const cacheInfoKey = `${msg.qIndex}|${msg.qvIndex}|${msg.qMode}`;
-  if (cacheKey !== cachedKey) {
+  if (cacheKey !== cachedKey || !msg.qCacheAllowed) {
     const res = await fetch(`/q_files/${msg.qIndex}`);
     const data = await res.json();
     if (msg.queryNum !== latest) return;
