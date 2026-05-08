@@ -1,13 +1,14 @@
 let latest = 0;
 let cachedKey = null;
 let cachedData = null;
+let cachedInfoKey = null;
 let cachedInfo = null;
 
 function fieldToCanvas(config, scale, gd, x, y) {
   return [(x + config.field_length_mm / 2) * scale + 1 + gd, (config.field_width_mm / 2 - y) * scale + 1];
 }
 
-function processQData(data, qvIndex) {
+function processQData(data, qvIndex, qMode) {
   const averages = {};
   let maxX = 0,
     maxY = 0,
@@ -28,23 +29,26 @@ function processQData(data, qvIndex) {
     if (!sums[subKey]) sums[subKey] = { q: data.q[key].map(() => 0), c: 0 };
     const qVals = data.q[key];
     for (let i = 0; i < qVals.length; i++) {
-      sums[subKey].q[i] += qVals[i];
-      // to do max instead of average
-      // sums[subKey].q[i] = Math.max(sums[subKey].q[i], qVals[i]);
+      if (qMode !== 'max') {
+        sums[subKey].q[i] += qVals[i];
+      } else {
+        sums[subKey].q[i] = Math.max(sums[subKey].q[i], qVals[i]);
+      }
     }
     sums[subKey].c++;
   }
 
   let minMaxVal, maxMaxVal;
   for (const key in sums) {
-    const avg = sums[key].q.map((v) => v / sums[key].c);
-    // for max instead of average
-    // const avg = sums[key].q.map((v) => v);
+    let val = sums[key].q;
+    if (qMode !== 'max') {
+      val = sums[key].q.map((v) => v / sums[key].c);
+    }
     let maxIdx = 0;
     let maxVal = -Infinity;
-    for (let i = 0; i < avg.length; i++) {
-      if (avg[i] > maxVal) {
-        maxVal = avg[i];
+    for (let i = 0; i < val.length; i++) {
+      if (val[i] > maxVal) {
+        maxVal = val[i];
         maxIdx = i;
       }
     }
@@ -77,14 +81,19 @@ async function renderQState(msg) {
   latest = msg.queryNum;
   const rosetteMode = msg.type === 'render_rosette';
 
-  const cacheKey = `${msg.qIndex}|${msg.qvIndex}`;
+  const cacheKey = `${msg.qIndex}`;
+  const cacheInfoKey = `${msg.qIndex}|${msg.qvIndex}|${msg.qMode}`;
   if (cacheKey !== cachedKey) {
     const res = await fetch(`/q_files/${msg.qIndex}`);
     const data = await res.json();
     if (msg.queryNum !== latest) return;
     cachedData = data;
-    cachedInfo = processQData(data, msg.qvIndex);
     cachedKey = cacheKey;
+    cachedInfoKey = '';
+  }
+  if (cacheInfoKey !== cachedInfoKey) {
+    cachedInfo = processQData(cachedData, msg.qvIndex, msg.qMode);
+    cachedInfoKey = cacheKey;
   }
 
   const data = cachedData;
@@ -108,12 +117,6 @@ async function renderQState(msg) {
 
   const fontSize = Math.max(10, Math.round(msg.scale * 4));
   const needText = rosetteMode;
-  if (needText) {
-    ctx.font = `${fontSize}px monospace`;
-    ctx.fillStyle = '#fff';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-  }
 
   const xStart = rosetteMode ? xSel : 0;
   const xEnd = rosetteMode ? xSel : info.maxX;
@@ -187,13 +190,19 @@ async function renderQState(msg) {
           ctx.fill();
 
           if (needText) {
-            const inv = arrowLen ? 1 / arrowLen : 0;
-            const ox = -dy * inv;
-            const oy = dx * inv;
-            ctx.font = `${fontSize * 2.5}px sanserif`;
+            ctx.save();
+            ctx.translate(mx, my);
+            ctx.rotate(ca + Math.PI / 8);
+            ctx.font = `${fontSize * 2}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            const text = maxVal.toFixed(Math.abs(maxVal) < 10 ? 2 : Math.abs(maxVal) < 100 ? 1 : 0);
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.strokeText(text, 0, -10);
             ctx.fillStyle = '#0f0';
-            ctx.textAlign = 'left';
-            ctx.fillText(maxVal.toFixed(2), mx + ox * fontSize, my + oy * fontSize);
+            ctx.fillText(text, 0, -10);
+            ctx.restore();
           }
         }
       }

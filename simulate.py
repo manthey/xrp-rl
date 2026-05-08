@@ -756,9 +756,11 @@ async def simulation_loop():  # noqa
             bx, by, vx, vy, contact = collide_ball_with_robot(bx, by, vx, vy, robot)
             if contact:
                 sim_state['last_contact']['contact_id'] += 1
-                sim_state['last_contact']['last_robot_id'] = sim_state['last_contact'].get('robot_id')
+                sim_state['last_contact']['last_robot_id'] = sim_state['last_contact'].get(
+                    'robot_id')
                 sim_state['last_contact']['last_team'] = sim_state['last_contact'].get('team')
-                sim_state['last_contact']['last_sim_time'] = sim_state['last_contact'].get('sim_time')
+                sim_state['last_contact']['last_sim_time'] = sim_state['last_contact'].get(
+                    'sim_time')
                 sim_state['last_contact']['robot_id'] = robot_id
                 sim_state['last_contact']['team'] = robot['team']
                 sim_state['last_contact']['sim_time'] = sim_state['sim_time']
@@ -996,11 +998,15 @@ async def q_files_list():
 
 @app.get('/q_files/{index}')
 async def q_files_index(index: int):
-    try:
-        with open(sim_state['q_files'][index]) as f:
-            return json.load(f)
-    except Exception:
-        return {'error': 'load failed'}
+    for retry in range(3, -1, -1):
+        try:
+            with open(sim_state['q_files'][index]) as f:
+                return json.load(f)
+        except Exception:
+            if retry:
+                time.sleep(0.1)
+                continue
+            return {'error': 'load failed'}
 
 
 @app.get('/train')

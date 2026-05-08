@@ -16,6 +16,8 @@ let qIndex = -1;
 let qQueryNum = 0;
 let qvIndex = 0;
 let qData = null;
+let qMode = 'avg';
+let qUpdate = null;
 let qGridInfo = null;
 let qCanvas = null;
 let qRosette = false;
@@ -241,15 +243,24 @@ async function toggleQState() {
       qData = null;
       qCanvas = null;
       qWorker.postMessage({ type: 'clear', queryNum });
-      btn.textContent = 'Visualize: Off';
+      btn.textContent = 'Visualize';
       render();
       return;
     }
   }
   const desc = ['', ' (dist)', ' (acc)', ' (prev)'];
-  btn.textContent = `Visualize: ${qFiles[qIndex]}${desc[qvIndex]}`;
+  btn.textContent = `${qFiles[qIndex]}${desc[qvIndex]}`;
   postRender();
 }
+
+async function toggleQMode() {
+  const btn = document.getElementById('show-qmode');
+  qMode = qMode === 'avg' ? 'max' : 'avg';
+  btn.textContent = qMode === 'avg' ? 'Avg' : 'Max';
+  qQueryNum += 1;
+  postRender();
+}
+
 function postRender() {
   if (qIndex === qFiles.length || qIndex < 0) {
     return;
@@ -263,6 +274,7 @@ function postRender() {
       queryNum,
       qIndex,
       qvIndex,
+      qMode,
       width: canvas.width,
       height: canvas.height,
       scale,
