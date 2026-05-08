@@ -42,7 +42,7 @@ class QAgent:
 
     def save(self, path):
         data = {
-            'axes': ['x', 'y', 'heading', 'dist', 'acc', 'prev'],
+            'axes': ['x', 'y', 'heading', 'dist', 'acc', 'prev', 'ballx', 'bally'],
             'actions': [list(a) for a in self.actions],
             'q': self.q,
             'counts': self.counts,
@@ -117,7 +117,9 @@ class QAgent:
             self.counts[state] = [0] * len(self.actions)
         return self.q[state], self.counts[state]
 
-    def discretize(self, pose, distance_cm, reflectance_left, reflectance_right, previous_action):
+    def discretize(
+            self, pose, distance_cm, reflectance_left, reflectance_right,
+            previous_action, world=None):
         x = float(pose.get('x_mm', 0.0))
         y = float(pose.get('y_mm', 0.0))
         heading = float(pose.get('heading_deg', 0.0))
@@ -133,13 +135,22 @@ class QAgent:
         heading_bin = self.bin_value(((heading + 360 + 22.5) % 360.0), 0, 360, 16)
         distance_bin = self.distance_bin(distance_cm)
         confidence_bin = self.confidence_bin(std_x, std_y, std_heading)
-        return '%d,%d,%d,%d,%d,%d' % (
+        ball_bin = (0, 0)
+        if world and 'ball' in world:
+            ball_x_bin = self.bin_value(
+                world['ball']['world_x_mm'], -FIELD_LENGTH_MM / 2, FIELD_LENGTH_MM / 2, 15)
+            ball_y_bin = self.bin_value(
+                world['ball']['world_y_mm'], -FIELD_WIDTH_MM / 2, FIELD_WIDTH_MM / 2, 7)
+            ball_bin = (ball_x_bin, ball_y_bin)
+        return '%d,%d,%d,%d,%d,%d,%d,%d' % (
             x_bin,
             y_bin,
             heading_bin,
             distance_bin,
             confidence_bin,
             previous_action or 0,
+            ball_bin[0],
+            ball_bin[1],
         )
 
     def bin_value(self, value, low, high, count):

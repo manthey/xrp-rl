@@ -151,7 +151,7 @@ if is_simulation:  # noqa
                 self.sim_time = data.get('sim_time', self.sim_time or time.time())
                 if 'ball' in data:
                     self.world['ball'] = data['ball']
-                if 'ronots' in data:
+                if 'robots' in data:
                     self.world['robots'] = data['robots']
                 reward_total = float(data.get('reward_total', self.reward_total))
                 if (data.get('last_contact') or {}).get('robot_id') != self.robot_id:
@@ -321,6 +321,7 @@ while True:  # noqa
         refl_l = reflectance.get_left()
         refl_r = reflectance.get_right()
         heading = board.imu.get_heading()
+        world = virtual_robot.world if virtual_robot else {}
         pf.step(left_ticks, right_ticks, distance_cm, refl_l, refl_r, heading)
         if not is_simulation or left_ticks or right_ticks or not pose:
             pose = pf.get_pose_with_error()
@@ -333,7 +334,7 @@ while True:  # noqa
                 robot_mode != 'train' or virtual_robot.training):
             last_state = state
             last_action = action
-            state = agent.discretize(pose, distance_cm, refl_l, refl_r, agent.last_action)
+            state = agent.discretize(pose, distance_cm, refl_l, refl_r, agent.last_action, world)
             reward = 0
             terminal = False
             if is_simulation and robot_mode == 'train':

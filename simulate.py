@@ -155,6 +155,12 @@ async def send_robot_state(robot_id: str, ws: WebSocket):
             'last_result': sim_state['run_record'][-1] if len(sim_state['run_record']) else '',
             'sim_start': sim_state['sim_start'],
             'sim_time': sim_state['sim_time'],
+            'ball': ball_state,
+            'robots': {robot_id: {
+                'world_x_mm': robot['world_x_mm'],
+                'world_y_mm': robot['world_y_mm'],
+                'world_heading_deg': robot['world_heading_deg'],
+            } for robot_id, robot in robots.items()},
             'reward_total': reward['reward'],
             'terminal_id': reward['terminal_id'],
             'last_contact': sim_state['last_contact'],
@@ -973,6 +979,12 @@ async def websocket_endpoint(ws: WebSocket):
                 'run_start_time': sim_state['run_start_time'],
                 'sim_start': sim_state['sim_start'],
                 'sim_time': sim_state['sim_time'],
+                    'ball': ball_state,
+                    'robots': {robot_id: {
+                        'world_x_mm': robot['world_x_mm'],
+                        'world_y_mm': robot['world_y_mm'],
+                        'world_heading_deg': robot['world_heading_deg'],
+                    } for robot_id, robot in robots.items()},
             }
         })
         while True:
