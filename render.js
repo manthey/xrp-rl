@@ -24,12 +24,14 @@ let qRosette = false;
 let qClickX = 0;
 let qClickY = 0;
 let qCacheAllowed = false;
+let lastWorkerRender = { when: 0, run_number: -1, last_run_number: -1 };
 const qWorker = new Worker('qworker.js');
 
 qWorker.onmessage = (e) => {
   if (e.data.queryNum !== qQueryNum) return;
   qCanvas = e.data.bitmap;
   render();
+  lastWorkerRender.when = Date.now();
 };
 
 function connectWebSocket() {
@@ -263,6 +265,32 @@ async function toggleQMode() {
   postRender();
 }
 
+async function toggleQUpdate() {
+  const btn = document.getElementById('show-qupdate');
+  if (qUpdate !== null) {
+    window.clearTimeout(qUpdate);
+    qUpdate = null;
+  } else {
+    qUpdate = window.setTimeout(autoRefresh, 0);
+  }
+  btn.textContent = qUpdate === null ? 'Once' : 'Auto';
+}
+
+function autoRefresh() {
+  if (!qUpdate) {
+    return;
+  }
+  if (
+    Date.now() - lastWorkerRender.when > 10 &&
+    Date.now() - (lastWorkerRender.requested || 0) > 10 &&
+    lastWorkerRender.last_run_number != lastWorkerRender.run_number
+  ) {
+    qCacheAllowed = false;
+    postRender();
+  }
+  qUpdate = window.setTimeout(autoRefresh, 1000);
+}
+
 function postRender() {
   if (qIndex === qFiles.length || qIndex < 0) {
     return;
@@ -289,6 +317,8 @@ function postRender() {
       payload.clickY = qClickY * canvas.height;
     }
     qWorker.postMessage(payload);
+    lastWorkerRender.last_run_number = lastWorkerRender.run_number;
+    lastWorkerRender.requested = Date.now();
     qCacheAllowed = true;
   } catch (e) {
     console.log(e);
@@ -524,6 +554,7 @@ function updateTrainingInfo(state) {
     const r = (state.run_record || {}).red || 0;
     const b = (state.run_record || {}).blue || 0;
     infoEl.textContent = `Run: ${state.run_number}, R: ${r}, B: ${b}, Time: ${elapsed}s`;
+    lastWorkerRender.run_number = state.run_number;
   }
 }
 
