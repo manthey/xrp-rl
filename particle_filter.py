@@ -12,8 +12,8 @@ TAPE_THRESHOLD = 0.4
 DISTANCE_INVALID = 6553.0
 DISTANCE_SHORT_OBSTACLE_LIKELIHOOD = 0.4
 RESAMPLE_FRACTION = 0.5
-START_HEADING_SIGMA_DEG = 20.0
-IMU_RELATIVE_SIGMA_DEG = 25.0
+START_HEADING_SIGMA_DEG = 10.0
+IMU_RELATIVE_SIGMA_DEG = 15.0
 
 if hasattr(random, 'gauss'):
     gauss = random.gauss
@@ -157,7 +157,7 @@ class ParticleFilter:
                         w *= max(wall_likelihood, 0.05)
             else:
                 if exp_dist is not None and exp_dist < 800:
-                    w *= 0.3
+                    w *= 0.1
             lx, ly, rx, ry = self.reflectance_sensor_positions(p)
             for sx, sy, observed in ((lx, ly, observed_left_tape),
                                      (rx, ry, observed_right_tape)):

@@ -13,7 +13,8 @@ function processQData(data, qvIndex, qMode) {
   let maxX = 0,
     maxY = 0,
     maxH = 0,
-    maxP1 = 0;
+    maxP1,
+    minP1 = 0;
   const sums = {};
   for (const key in data.q) {
     const parts = key.split(',').map(Number);
@@ -24,6 +25,10 @@ function processQData(data, qvIndex, qMode) {
     maxX = Math.max(maxX, x);
     maxY = Math.max(maxY, y);
     maxH = Math.max(maxH, h);
+    if (maxP1 === undefined) {
+      maxP1 = minP1 = p1;
+    }
+    minP1 = Math.min(minP1, p1);
     maxP1 = Math.max(maxP1, p1);
     const subKey = `${x},${y},${h},${p1}`;
     if (!sums[subKey]) sums[subKey] = { q: data.q[key].map(() => 0), c: 0 };
@@ -37,7 +42,9 @@ function processQData(data, qvIndex, qMode) {
     }
     sums[subKey].c++;
   }
-
+  if (maxP1 === undefined) {
+    maxP1 = minP1 = 0;
+  }
   let minMaxVal, maxMaxVal;
   for (const key in sums) {
     let val = sums[key].q;
@@ -58,7 +65,7 @@ function processQData(data, qvIndex, qMode) {
     averages[key] = [maxIdx, maxVal];
   }
 
-  return { averages, maxX, maxY, maxH, maxP1, minMaxVal, maxMaxVal };
+  return { averages, maxX, maxY, maxH, minP1, maxP1, minMaxVal, maxMaxVal };
 }
 
 function clamp(v, lo, hi) {
@@ -109,7 +116,7 @@ async function renderQState(msg) {
   const binH = rosetteMode ? msg.config.field_width_mm : msg.config.field_width_mm / (info.maxY + 1);
   const maxR = Math.min(binW, binH) * 0.48;
   const innerR = maxR * 0.2;
-  const ringW = (maxR - innerR) / (info.maxP1 + 1);
+  const ringW = (maxR - innerR) / (info.maxP1 - info.minP1 + 1);
   const dTheta = (2 * Math.PI) / (info.maxH + 1);
 
   const [xSel, ySel] = rosetteMode ? clickedToXY(msg, info) : [0, 0];
@@ -139,15 +146,15 @@ async function renderQState(msg) {
         const theta = h * dTheta;
         const ca = -theta;
 
-        for (let p1 = 0; p1 <= info.maxP1; p1++) {
+        for (let p1 = info.minP1; p1 <= info.maxP1; p1++) {
           const subKey = `${x},${y},${h},${p1}`;
           const avg = info.averages[subKey];
           if (!avg) continue;
 
           const [actionIdx, maxVal] = avg;
           const action = data.actions[actionIdx];
-          const r1 = msg.scale * (innerR + p1 * ringW);
-          const r2 = msg.scale * (innerR + (p1 + 1) * ringW);
+          const r1 = msg.scale * (innerR + (p1 - info.minP1) * ringW);
+          const r2 = msg.scale * (innerR + (p1 - info.minP1 + 1) * ringW);
           const rel = ((maxVal - info.minMaxVal) / range) * 0.6 + 0.2;
 
           ctx.beginPath();

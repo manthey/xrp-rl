@@ -199,7 +199,7 @@ def reset_episode():
         base_heading = 0 if team == 'red' else 180
         offset = 0 if random.random() >= 0.5 else 1
         for index, robot in enumerate([robots[robot_id] for robot_id in robot_ids]):
-            heading = (base_heading + random.gauss(0, 5)) % 360
+            heading = (base_heading + random.gauss(0, 5) + 360) % 360
             robot.update({
                 'world_x_mm': random.gauss(base_x, 100),
                 'world_y_mm': random.gauss(
@@ -647,7 +647,7 @@ def update_rewards(dt):  # noqa
         if new_goal:
             terminal = True
             elapsed = sim_state['sim_time'] - sim_state['sim_start']
-            win_score = 100 + 50 * (1 - min(1, elapsed / EPISODE_MAXIMUM_TIME))
+            win_score = 1000 + 5000 * (1 - min(1, elapsed / EPISODE_MAXIMUM_TIME))
             reward += (1 if scored_team == team else -1) * win_score
         entry = robot_rewards.setdefault(robot_id, {'reward': 0.0, 'terminal_id': 0})
         entry['reward'] += reward
