@@ -140,7 +140,7 @@ async def send_robot_state(robot_id: str, ws: WebSocket):
         return
     reward = robot_rewards.setdefault(robot_id, {'reward': 0.0, 'terminal_id': 0})
     reset = bool(robot.get('reset', False))
-    await asyncio.wait_for(ws.send_json({
+    await ws.send_json({
         'type': 'robot_state',
         'data': {
             'robot_id': robot_id,
@@ -165,7 +165,7 @@ async def send_robot_state(robot_id: str, ws: WebSocket):
             'terminal_id': reward['terminal_id'],
             'last_contact': sim_state['last_contact'],
         }
-    }), timeout=0.5)
+    })
     if reset:
         robot['reset'] = False
 
@@ -647,8 +647,8 @@ def update_rewards(dt):  # noqa
         if new_goal:
             terminal = True
             elapsed = sim_state['sim_time'] - sim_state['sim_start']
-            win_score = 1000 + 5000 * (1 - min(1, elapsed / EPISODE_MAXIMUM_TIME))
-            reward += (1 if scored_team == team else -1) * win_score
+            win_score = 100 + 50 * (1 - min(1, elapsed / EPISODE_MAXIMUM_TIME))
+            reward += (2 if scored_team == team else -1) * win_score
         entry = robot_rewards.setdefault(robot_id, {'reward': 0.0, 'terminal_id': 0})
         entry['reward'] += reward
         if terminal:
@@ -742,6 +742,13 @@ async def simulation_loop():  # noqa
                     'run_start_time': sim_state['run_start_time'],
                     'sim_start': sim_state['sim_start'],
                     'sim_time': sim_state['sim_time'],
+                    'ball': ball_state,
+                    'robots': {robot_id: {
+                        'world_x_mm': robot['world_x_mm'],
+                        'world_y_mm': robot['world_y_mm'],
+                        'world_heading_deg': robot['world_heading_deg'],
+                    } for robot_id, robot in robots.items()},
+                    'last_contact': sim_state['last_contact'],
                 }
             })
             for robot in robots.values():
@@ -813,6 +820,7 @@ async def simulation_loop():  # noqa
                         'world_y_mm': robot['world_y_mm'],
                         'world_heading_deg': robot['world_heading_deg'],
                     } for robot_id, robot in robots.items()},
+                    'last_contact': sim_state['last_contact'],
                 }
             })
 
@@ -943,7 +951,7 @@ async def robot_websocket_endpoint(ws: WebSocket):
             except Exception:
                 pass
         robot_websocket_clients[robot_id] = ws
-        await asyncio.wait_for(ws.send_json({'type': 'hello', 'robot_id': robot_id}), timeout=0.5)
+        await ws.send_json({'type': 'hello', 'robot_id': robot_id})
         await send_robot_state(robot_id, ws)
         while True:
             msg = json.loads(await ws.receive_text())
@@ -985,6 +993,7 @@ async def websocket_endpoint(ws: WebSocket):
                         'world_y_mm': robot['world_y_mm'],
                         'world_heading_deg': robot['world_heading_deg'],
                     } for robot_id, robot in robots.items()},
+                'last_contact': sim_state['last_contact'],
             }
         })
         while True:
@@ -1017,7 +1026,7 @@ async def q_files_list():
 
 @app.get('/q_files/{index}')
 async def q_files_index(index: int):
-    for retry in range(3, -1, -1):
+    for retry in range(30, -1, -1):
         try:
             with open(sim_state['q_files'][index]) as f:
                 return json.load(f)

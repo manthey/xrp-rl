@@ -6,11 +6,19 @@ from util import FIELD_LENGTH_MM, FIELD_WIDTH_MM
 
 DEFAULT_ACTIONS = [
     # ('stop', 0.0, 0.0, []),
-    ('forward_slow', 0.5, 0.0, []),
+    ('forward_slow', 0.5, 0.0, ['back_slow']),
     ('Forward_fast', 1, 0.0, []),
     ('Back_fast', -1, 0.0, []),
-    ('Left_turn_fast', 0.0, -1, ['Right_turn_fast', ]),
-    ('Right_turn_fast', 0.0, 1, ['Left_turn_fast', ]),
+    ('Left_turn_fast', 0.0, -1, ['Right_turn_fast', 'right_turn_slow']),
+    ('Right_turn_fast', 0.0, 1, ['Left_turn_fast', 'left_turn_slow']),
+
+    # ('back_slow', -0.5, 0.0, ['forward_slow']),
+    # ('left_turn_slow', 0.0, -0.5, ['Right_turn_fast', 'right_turn_slow']),
+    # ('right_turn_slow', 0.0, 0.5, ['Left_turn_fast', 'left_turn_slow']),
+    # ('fl', 0.5, -0.5, ['br']),
+    # ('fr', 0.5, 0.5, ['bl']),
+    # ('bl', -0.5, -0.5, ['fr']),
+    # ('br', -0.5, 0.5, ['fl']),
 ]
 
 
@@ -71,8 +79,8 @@ class QAgent:
             self, next_state, reward, terminal=False, last_state=None,
             last_action=None, increment=None):
         increment = (0 if last_state is not None else 1) if increment is None else increment
-        last_state = self.last_state if last_state is None else self.last_state
-        last_action = self.last_action if last_action is None else self.last_action
+        last_state = self.last_state if last_state is None else last_state
+        last_action = self.last_action if last_action is None else last_action
         if last_state is None or last_action is None:
             return
         q, n = self.row(last_state)
@@ -179,10 +187,10 @@ class QAgent:
 
     def confidence_bin(self, std_x, std_y, std_heading):
         position_std = max(std_x, std_y)
-        if position_std < 100 and std_heading < 8:
+        if position_std < 100 and std_heading < 4:
             return 0
-        if position_std < 200 and std_heading < 16:
+        if position_std < 150 and std_heading < 7:
             return 1
-        if position_std < 400 and std_heading < 32:
+        if position_std < 200 and std_heading < 10:
             return 2
         return 3
