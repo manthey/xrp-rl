@@ -1,6 +1,7 @@
 import json
 import math
 import random
+import time
 
 from util import FIELD_LENGTH_MM, FIELD_WIDTH_MM
 
@@ -37,6 +38,7 @@ class QAgent:
         self.counts = {}
         self.last_state = None
         self.last_action = None
+        self.next_save = 0
 
     def load(self, path):
         try:
@@ -48,7 +50,10 @@ class QAgent:
             self.q = {}
             self.counts = {}
 
-    def save(self, path):
+    def save(self, path, force=False):
+        if time.time() < self.next_save and not force:
+            return
+        start = time.time()
         data = {
             'axes': ['x', 'y', 'heading', 'dist', 'acc', 'prev', 'ballx', 'bally'],
             'actions': [list(a) for a in self.actions],
@@ -58,8 +63,11 @@ class QAgent:
         try:
             with open(path, 'w') as f:
                 json.dump(data, f)
+            duration = time.time() - start
+            self.next_save = time.time() + duration * 20
             return True
         except Exception:
+            self.next_save = time.time() + duration * 5
             return False
 
     def command(self, action_index):
