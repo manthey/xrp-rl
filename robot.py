@@ -300,6 +300,7 @@ last_print = 0
 state = action = None
 last_state = last_action = None
 pose = None
+bestrp100 = (0, 0)
 
 while True:  # noqa
     if pestolink.is_connected():
@@ -374,10 +375,13 @@ while True:  # noqa
                 virtual_robot.episodes[3].append(1 if win else -1)
             else:
                 virtual_robot.episodes[3].append(0)
-            rp100 = sum(virtual_robot.episodes[3][-100:]) / len(virtual_robot.episodes[3][-100:])
+            rp100s = sum(virtual_robot.episodes[3][-100:])
+            rp100 = rp100s / len(virtual_robot.episodes[3][-100:])
+            if rp100s * 0.01 >= bestrp100[0]:
+                bestrp100 = [rp100s * 0.01, virtual_robot.episodes[0]]
             print(f'{robot_name}  episodes {virtual_robot.episodes[0]}, '
                   f'W {virtual_robot.episodes[1]}, L {virtual_robot.episodes[2]}, '
-                  f'RP100 {rp100:4.2f}')
+                  f'RP100 {rp100:4.2f} ({bestrp100[0]:4.2f} at {bestrp100[1]})')
             virtual_robot.episodes[0] += 1
             virtual_robot.terminal_reward = None
             virtual_robot.reward_total = 0.0
