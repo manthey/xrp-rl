@@ -197,19 +197,21 @@ async function renderQState(msg) {
           ctx.fill();
 
           if (needText) {
-            ctx.save();
-            ctx.translate(mx, my);
-            ctx.rotate(ca + Math.PI / 8);
-            ctx.font = `${fontSize * 2}px sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'bottom';
             const text = maxVal.toFixed(Math.abs(maxVal) < 10 ? 2 : Math.abs(maxVal) < 100 ? 1 : 0);
-            ctx.strokeStyle = '#000';
-            ctx.lineWidth = 2;
-            ctx.strokeText(text, 0, -10);
-            ctx.fillStyle = '#0f0';
-            ctx.fillText(text, 0, -10);
-            ctx.restore();
+            if (text !== '0.00') {
+              ctx.save();
+              ctx.translate(mx, my);
+              ctx.rotate(ca + Math.PI / 8);
+              ctx.font = `${fontSize * 2}px sans-serif`;
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'bottom';
+              ctx.strokeStyle = '#000';
+              ctx.lineWidth = 2;
+              ctx.strokeText(text, 0, -10);
+              ctx.fillStyle = '#0f0';
+              ctx.fillText(text, 0, -10);
+              ctx.restore();
+            }
           }
         }
       }

@@ -337,7 +337,8 @@ while True:  # noqa
                 robot_mode != 'train' or virtual_robot.training):
             last_state = state
             last_action = action
-            state = agent.discretize(pose, distance_cm, refl_l, refl_r, agent.last_action, world)
+            state = agent.discretize(
+                pose, distance_cm, refl_l, refl_r, agent.last_action, world, robot_name)
             reward = 0
             terminal = False
             if is_simulation and robot_mode == 'train':
