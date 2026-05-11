@@ -35,11 +35,12 @@ if is_simulation:  # noqa
     parser.add_argument('--simulator', default='http://127.0.0.1:8080')
     parser.add_argument('--robot-id', '--id', '--name', default='RBV-XRP2')
     parser.add_argument('--team', default='red', choices=['red', 'blue'])
+    parser.add_argument('--role', help='comma separated offense, defense, center, wing')
     parser.add_argument('--pos', default='high', choices=['high', 'low'])
     parser.add_argument('--mode', default='train', choices=['manual', 'rl', 'train'])
     parser.add_argument('--world', default='robot,ball')
     parser.add_argument('--q-file', default='qtable.json')
-    parser.add_argument('--log-pose')
+    parser.add_argument('--log-pose', help='log pose records for later analysis')
     args = parser.parse_args()
 
     class MockPin:
@@ -57,6 +58,7 @@ if is_simulation:  # noqa
         def __init__(self, url, robot_id):
             self.robot_id = robot_id
             self.team = args.team
+            self.role = args.role
             self.pos = args.pos
             self.ws_url = self.build_ws_url(url)
             self.ws = None
@@ -108,6 +110,7 @@ if is_simulation:  # noqa
                         'type': 'hello',
                         'robot_id': self.robot_id,
                         'team': self.team,
+                        'role': self.role or '',
                         'pos': self.pos,
                     }))
                     self.last_command = None

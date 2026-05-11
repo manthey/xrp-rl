@@ -69,13 +69,16 @@ def spawn_pose(team: str, pos: str) -> dict:
     }
 
 
-def ensure_virtual_robot(robot_id: str, team: str = 'red', pos: str = 'high') -> dict:
+def ensure_virtual_robot(
+    robot_id: str, team: str = 'red', pos: str = 'high', role: str | None = None,
+) -> dict:
     robot = robots.get(robot_id)
     if robot is None:
         robot = {
             'robot_id': robot_id,
             'virtual': True,
             'team': team,
+            'role': {r[0] for r in (role or '').split(',') if r},
             'cmd_vel_left': 0.0,
             'cmd_vel_right': 0.0,
             'last_vel_left': 0.0,
@@ -98,6 +101,7 @@ def ensure_virtual_robot(robot_id: str, team: str = 'red', pos: str = 'high') ->
         robot['robot_id'] = robot_id
         robot['virtual'] = True
         robot['team'] = team
+        robot['role'] = {r[0] for r in (role or '').split(',') if r}
         robot['training'] = sim_state['training']
         if robot.get('world_x_mm') is None or robot.get('world_y_mm') is None:
             robot.update(spawn_pose(team, pos))
@@ -597,6 +601,7 @@ def update_rewards(dt):  # noqa
         if rx is None or ry is None:
             continue
         team = robot.get('team', 'red')
+        role = robot.get('role', set())
         direction = team_goal_direction(team)
         dist_to_ball = math.sqrt((bx - rx) ** 2 + (by - ry) ** 2)
         prev = reward_memory.get(robot_id)
@@ -612,6 +617,10 @@ def update_rewards(dt):  # noqa
         approach = prev['dist_to_ball'] - dist_to_ball
         reward = 0
         reward += -0.0005 * dt
+        if 'c' in role:
+            reward -= 0.01 * max(0, abs(ry) / (FIELD_WIDTH_MM / 4) - 1) * dt
+        if 'w' in role:
+            reward -= 0.01 * max(0, 1 - abs(ry) / (FIELD_WIDTH_MM / 4)) * dt
         if False:
             reward += 0.0005 * ball_progress
             reward += 0.00025 * approach
@@ -648,7 +657,9 @@ def update_rewards(dt):  # noqa
             terminal = True
             elapsed = sim_state['sim_time'] - sim_state['sim_start']
             win_score = 100 + 50 * (1 - min(1, elapsed / EPISODE_MAXIMUM_TIME))
-            reward += (2 if scored_team == team else -1) * win_score
+            reward += ((3 if 'o' in role else (1 if 'd' in role else 2))
+                       if scored_team == team else
+                       (-3 if 'd' in role else -1)) * win_score
         entry = robot_rewards.setdefault(robot_id, {'reward': 0.0, 'terminal_id': 0})
         entry['reward'] += reward
         if terminal:
@@ -943,7 +954,7 @@ async def robot_websocket_endpoint(ws: WebSocket):
             await ws.close()
             return
         robot_id = hello['robot_id']
-        ensure_virtual_robot(robot_id, hello.get('team', 'red'), hello.get('pos', 'high'))
+        ensure_virtual_robot(robot_id, hello.get('team', 'red'), hello.get('pos', 'high'), role=hello.get('role'))
         previous = robot_websocket_clients.get(robot_id)
         if previous is not None and previous is not ws:
             try:
