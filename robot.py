@@ -37,7 +37,9 @@ if is_simulation:  # noqa
     parser.add_argument('--team', default='red', choices=['red', 'blue'])
     parser.add_argument('--pos', default='high', choices=['high', 'low'])
     parser.add_argument('--mode', default='train', choices=['manual', 'rl', 'train'])
+    parser.add_argument('--world', default='robot,ball')
     parser.add_argument('--q-file', default='qtable.json')
+    parser.add_argument('--log-pose')
     args = parser.parse_args()
 
     class MockPin:
@@ -293,6 +295,8 @@ else:
 pestolink = PestoLinkAgent(robot_name)
 pf = particle_filter.ParticleFilter(team=robot_team)
 agent = rl.QAgent(team=robot_team, epsilon=0.5 if robot_mode == 'train' else 0)
+if is_simulation:
+    agent.use_world = set(args.world.split(',')) if args.world else set()
 agent.load(q_file)
 last_save = time.time()
 next_action_time = 0
@@ -326,6 +330,15 @@ while True:  # noqa
         refl_r = reflectance.get_right()
         heading = board.imu.get_heading()
         world = virtual_robot.world if virtual_robot else {}
+        if is_simulation and args.log_pose and world and world.get('robots', {}).get(robot_name):
+            gt = world['robots'][robot_name]
+            with open(args.log_pose, 'a') as f:
+                f.write(json.dumps({
+                    'left': left_ticks, 'right': right_ticks, 'dist': distance_cm,
+                    'refl_l': refl_l, 'refl_r': refl_r, 'imu': heading,
+                    'gt_x': gt['world_x_mm'], 'gt_y': gt['world_y_mm'],
+                    'gt_h': gt['world_heading_deg']
+                }) + '\n')
         pf.step(left_ticks, right_ticks, distance_cm, refl_l, refl_r, heading)
         if not is_simulation or left_ticks or right_ticks or not pose:
             pose = pf.get_pose_with_error()
@@ -356,6 +369,9 @@ while True:  # noqa
                 if robot_mode == 'train' and time.time() - last_save > 10:
                     agent.save(q_file)
                     last_save = time.time()
+                if is_simulation and args.log_pose and world:
+                    with open(args.log_pose, 'a') as f:
+                        f.write('{}\n')
             action = agent.choose_action(state, agent.last_action)
             straight, turn = agent.command(action)
             drivetrain.arcade(straight, turn)

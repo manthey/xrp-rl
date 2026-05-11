@@ -39,6 +39,7 @@ class QAgent:
         self.last_state = None
         self.last_action = None
         self.next_save = 0
+        self.use_world = {'robot', 'ball'}
 
     def load(self, path):
         try:
@@ -136,14 +137,13 @@ class QAgent:
     def discretize(
             self, pose, distance_cm, reflectance_left, reflectance_right,
             previous_action, world=None, id=None):
-        use_world = {'robot', 'ball'}
         x = float(pose.get('x_mm', 0.0))
         y = float(pose.get('y_mm', 0.0))
         heading = float(pose.get('heading_deg', 0.0))
         std_x = float(pose.get('std_x_mm', 999.0))
         std_y = float(pose.get('std_y_mm', 999.0))
         std_heading = float(pose.get('std_heading_deg', 999.0))
-        if 'robot' in use_world and world and 'robots' in world and id in world['robots']:
+        if 'robot' in self.use_world and world and 'robots' in world and id in world['robots']:
             x = world['robots'][id]['world_x_mm']
             y = world['robots'][id]['world_y_mm']
             heading = world['robots'][id]['world_heading_deg']
@@ -158,7 +158,7 @@ class QAgent:
         distance_bin = self.distance_bin(distance_cm)
         confidence_bin = self.confidence_bin(std_x, std_y, std_heading)
         ball_bin = (0, 0)
-        if 'ball' in use_world and world and 'ball' in world:
+        if 'ball' in self.use_world and world and 'ball' in world:
             ball_x_bin = self.bin_value(
                 world['ball']['world_x_mm'], -FIELD_LENGTH_MM / 2, FIELD_LENGTH_MM / 2, 15)
             ball_y_bin = self.bin_value(

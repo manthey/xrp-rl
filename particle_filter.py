@@ -13,7 +13,7 @@ DISTANCE_INVALID = 6553.0
 DISTANCE_SHORT_OBSTACLE_LIKELIHOOD = 0.4
 RESAMPLE_FRACTION = 0.5
 START_HEADING_SIGMA_DEG = 10.0
-IMU_RELATIVE_SIGMA_DEG = 15.0
+IMU_RELATIVE_SIGMA_DEG = 10.0
 
 if hasattr(random, 'gauss'):
     gauss = random.gauss
@@ -42,6 +42,11 @@ class ParticleFilter:
     def __init__(self, team='red', num_particles=NUM_PARTICLES):
         self.num_particles = num_particles
         self.team = team
+        self.dist_noise_mult = 0.2
+        self.head_noise_mult = 0.1
+        self.imu_drift_sigma = 0.02
+        self.dist_sigma_mult = 0.05
+        self.imu_weight = 0.9
         self.reset()
 
     def reset(self):
@@ -92,12 +97,13 @@ class ParticleFilter:
         d_imu = ((((imu_deg - self.prev_imu_deg) % 360) + 540) % 360) - 180
 
         self.prev_imu_deg = imu_deg
-        d_heading = 0.9 * d_imu + 0.1 * d_heading_enc
-        dist_noise = max(2.0, abs(dist) * 0.2)
-        heading_noise = max(0.5, abs(d_heading) * 0.1)
+        d_heading = self.imu_weight * d_imu + (1 - self.imu_weight) * d_heading_enc
+        dist_noise = max(2.0, abs(dist) * self.dist_noise_mult)
+        heading_noise = max(0.5, abs(d_heading) * self.head_noise_mult)
         for p in self.particles:
             d = dist + gauss(0, dist_noise)
             dh = d_heading + gauss(0, heading_noise)
+            p.imu_offset += gauss(0, self.imu_drift_sigma)
             mid = math.radians(p.heading + dh / 2.0)
             p.x += d * math.cos(mid)
             p.y += d * math.sin(mid)
@@ -149,7 +155,7 @@ class ParticleFilter:
                     w *= 0.3
                 else:
                     err = distance_mm - exp_dist
-                    sigma = max(20.0, exp_dist * 0.05)
+                    sigma = max(20.0, exp_dist * self.dist_sigma_mult)
                     wall_likelihood = math.exp(-0.5 * (err / sigma) ** 2)
                     if distance_mm < exp_dist - 2 * sigma:
                         w *= max(wall_likelihood, DISTANCE_SHORT_OBSTACLE_LIKELIHOOD)
@@ -157,7 +163,7 @@ class ParticleFilter:
                         w *= max(wall_likelihood, 0.05)
             else:
                 if exp_dist is not None and exp_dist < 800:
-                    w *= 0.1
+                    w *= 0.05
             lx, ly, rx, ry = self.reflectance_sensor_positions(p)
             for sx, sy, observed in ((lx, ly, observed_left_tape),
                                      (rx, ry, observed_right_tape)):
