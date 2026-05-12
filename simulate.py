@@ -718,6 +718,26 @@ def run_summary():
     return {'red': len([r for r in recent if r == 'r']),
             'blue': len([b for b in recent if b == 'b'])}
 
+def training_state_msg():
+    return {
+        'type': 'training_state',
+        'data': {
+            'training': sim_state['training'],
+            'run_number': sim_state['run_number'],
+            'run_record': run_summary(),
+            'run_start_time': sim_state['run_start_time'],
+            'sim_start': sim_state['sim_start'],
+            'sim_time': sim_state['sim_time'],
+            'ball': ball_state,
+            'robots': {robot_id: {
+                'world_x_mm': robot['world_x_mm'],
+                'world_y_mm': robot['world_y_mm'],
+                'world_heading_deg': robot['world_heading_deg'],
+            } for robot_id, robot in robots.items()},
+            'last_contact': sim_state['last_contact'],
+        }
+    }
+
 
 async def simulation_loop():  # noqa
     dt = 1.0 / SIM_HZ
@@ -748,24 +768,7 @@ async def simulation_loop():  # noqa
         if (sim_state['training'] and sim_state['restart'] is not None and
                 sim_state['sim_time'] >= sim_state['restart']):
             reset_episode()
-            queue_broadcast({
-                'type': 'training_state',
-                'data': {
-                    'training': sim_state['training'],
-                    'run_number': sim_state['run_number'],
-                    'run_record': run_summary(),
-                    'run_start_time': sim_state['run_start_time'],
-                    'sim_start': sim_state['sim_start'],
-                    'sim_time': sim_state['sim_time'],
-                    'ball': ball_state,
-                    'robots': {robot_id: {
-                        'world_x_mm': robot['world_x_mm'],
-                        'world_y_mm': robot['world_y_mm'],
-                        'world_heading_deg': robot['world_heading_deg'],
-                    } for robot_id, robot in robots.items()},
-                    'last_contact': sim_state['last_contact'],
-                }
-            })
+            queue_broadcast(training_state_msg())
             for robot in robots.values():
                 if robot.get('virtual'):
                     robot['training'] = True
@@ -820,24 +823,7 @@ async def simulation_loop():  # noqa
         now = time.time()
         if sim_state['training'] and now - last_training_broadcast >= 10.0:
             last_training_broadcast = now
-            queue_broadcast({
-                'type': 'training_state',
-                'data': {
-                    'training': sim_state['training'],
-                    'run_number': sim_state['run_number'],
-                    'run_record': run_summary(),
-                    'run_start_time': sim_state['run_start_time'],
-                    'sim_start': sim_state['sim_start'],
-                    'sim_time': sim_state['sim_time'],
-                    'ball': ball_state,
-                    'robots': {robot_id: {
-                        'world_x_mm': robot['world_x_mm'],
-                        'world_y_mm': robot['world_y_mm'],
-                        'world_heading_deg': robot['world_heading_deg'],
-                    } for robot_id, robot in robots.items()},
-                    'last_contact': sim_state['last_contact'],
-                }
-            })
+            queue_broadcast(training_state_msg())
 
 
 @asynccontextmanager
@@ -993,24 +979,7 @@ async def websocket_endpoint(ws: WebSocket):
     ui_websocket_clients.append(ws)
     try:
         await ws.send_json({'type': 'init', 'robots': robots, 'ball': ball_state})
-        await ws.send_json({
-            'type': 'training_state',
-            'data': {
-                'training': sim_state['training'],
-                'run_number': sim_state['run_number'],
-                'run_record': run_summary(),
-                'run_start_time': sim_state['run_start_time'],
-                'sim_start': sim_state['sim_start'],
-                'sim_time': sim_state['sim_time'],
-                    'ball': ball_state,
-                    'robots': {robot_id: {
-                        'world_x_mm': robot['world_x_mm'],
-                        'world_y_mm': robot['world_y_mm'],
-                        'world_heading_deg': robot['world_heading_deg'],
-                    } for robot_id, robot in robots.items()},
-                'last_contact': sim_state['last_contact'],
-            }
-        })
+        await ws.send_json(training_state_msg())
         while True:
             msg = json.loads(await ws.receive_text())
             if msg.get('type') == 'arcade':
