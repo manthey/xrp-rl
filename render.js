@@ -42,7 +42,17 @@ function connectWebSocket() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
   ws = new WebSocket(`ws://${location.host}/ws`);
   ws.onmessage = onWsMessage;
-  ws.onclose = () => {};
+  ws.onclose = () => {
+    let delay = 100;
+    const maxDelay = 30000;
+    const attempt = () => {
+      if (!ws || ws.readyState !== WebSocket.CLOSED) return;
+      connectWebSocket();
+      setTimeout(attempt, delay);
+      delay = Math.min(delay * 2, maxDelay);
+    };
+    attempt();
+  };
 }
 
 function closeWebSocket() {

@@ -78,7 +78,7 @@ def ensure_virtual_robot(
             'robot_id': robot_id,
             'virtual': True,
             'team': team,
-            'role': {r[0] for r in (role or '').split(',') if r},
+            'role': ''.join({r[0] for r in (role or '').split(',') if r}),
             'cmd_vel_left': 0.0,
             'cmd_vel_right': 0.0,
             'last_vel_left': 0.0,
@@ -101,7 +101,7 @@ def ensure_virtual_robot(
         robot['robot_id'] = robot_id
         robot['virtual'] = True
         robot['team'] = team
-        robot['role'] = {r[0] for r in (role or '').split(',') if r}
+        robot['role'] = ''.join({r[0] for r in (role or '').split(',') if r})
         robot['training'] = sim_state['training']
         if robot.get('world_x_mm') is None or robot.get('world_y_mm') is None:
             robot.update(spawn_pose(team, pos))
@@ -601,7 +601,7 @@ def update_rewards(dt):  # noqa
         if rx is None or ry is None:
             continue
         team = robot.get('team', 'red')
-        role = robot.get('role', set())
+        role = robot.get('role', '')
         direction = team_goal_direction(team)
         dist_to_ball = math.sqrt((bx - rx) ** 2 + (by - ry) ** 2)
         prev = reward_memory.get(robot_id)
@@ -621,6 +621,10 @@ def update_rewards(dt):  # noqa
             reward -= 0.01 * max(0, abs(ry) / (FIELD_WIDTH_MM / 4) - 1) * dt
         if 'w' in role:
             reward -= 0.01 * max(0, 1 - abs(ry) / (FIELD_WIDTH_MM / 4)) * dt
+        if 'l' in role:
+            reward -= 0.01 * max(0, -ry / (FIELD_WIDTH_MM / 2)) * dt
+        if 'r' in role:
+            reward -= 0.01 * max(0, ry / (FIELD_WIDTH_MM / 2)) * dt
         if False:
             reward += 0.0005 * ball_progress
             reward += 0.00025 * approach
