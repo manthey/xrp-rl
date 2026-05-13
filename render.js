@@ -46,7 +46,7 @@ function connectWebSocket() {
     let delay = 100;
     const maxDelay = 30000;
     const attempt = () => {
-      if (!ws || ws.readyState !== WebSocket.CLOSED) return;
+      if (!ws || ws.readyState !== WebSocket.CLOSED || document.hidden) return;
       connectWebSocket();
       setTimeout(attempt, delay);
       delay = Math.min(delay * 2, maxDelay);
