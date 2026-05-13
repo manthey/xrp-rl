@@ -77,10 +77,10 @@ function clickedToXY(msg, info) {
   const py = msg.clickY;
   const x_range = msg.config.field_length_mm + msg.config.goal_depth_mm * 2 - msg.config.robot_length_mm;
   const y_range = msg.config.field_width_mm - msg.config.robot_length_mm;
-  const wx = (px - 1 - msg.gd) / msg.scale - x_range / 2;
-  const wy = y_range / 2 - (py - 1) / msg.scale;
   const binW = x_range / (info.maxX + 1);
   const binH = y_range / (info.maxY + 1);
+  const wx = (px - 1) / msg.scale - x_range / 2 - msg.config.robot_length_mm / 2;
+  const wy = y_range / 2 - (py - 1) / msg.scale + msg.config.robot_length_mm / 2;
   const xIndex = clamp(Math.round((wx + x_range / 2) / binW - 0.5), 0, info.maxX);
   const yIndex = clamp(Math.round((wy + y_range / 2) / binH - 0.5), 0, info.maxY);
   return [xIndex, yIndex];
