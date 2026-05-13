@@ -3,7 +3,8 @@ import math
 import random
 import time
 
-from util import FIELD_LENGTH_MM, FIELD_WIDTH_MM
+from util import (FIELD_LENGTH_MM, FIELD_WIDTH_MM, GOAL_DEPTH_MM,
+                  ROBOT_LENGTH_MM)
 
 DEFAULT_ACTIONS = [
     # ('stop', 0.0, 0.0, []),
@@ -152,8 +153,10 @@ class QAgent:
             x = -x
             y = -y
             heading = (180.0 + heading) % 360.0
-        x_bin = self.bin_value(x, -FIELD_LENGTH_MM / 2, FIELD_LENGTH_MM / 2, 15)
-        y_bin = self.bin_value(y, -FIELD_WIDTH_MM / 2, FIELD_WIDTH_MM / 2, 7)
+        x_range = FIELD_LENGTH_MM / 2 + GOAL_DEPTH_MM - ROBOT_LENGTH_MM / 2
+        y_range = FIELD_WIDTH_MM / 2 - ROBOT_LENGTH_MM / 2
+        x_bin = self.bin_value(x, -x_range, x_range, 15)
+        y_bin = self.bin_value(y, -y_range, y_range, 7)
         heading_bin = self.bin_value(((heading + 360 + 22.5) % 360.0), 0, 360, 16)
         distance_bin = self.distance_bin(distance_cm)
         confidence_bin = self.confidence_bin(std_x, std_y, std_heading)

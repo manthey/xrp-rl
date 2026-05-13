@@ -75,12 +75,14 @@ function clamp(v, lo, hi) {
 function clickedToXY(msg, info) {
   const px = msg.clickX;
   const py = msg.clickY;
-  const wx = (px - 1 - msg.gd) / msg.scale - msg.config.field_length_mm / 2;
-  const wy = msg.config.field_width_mm / 2 - (py - 1) / msg.scale;
-  const binW = msg.config.field_length_mm / (info.maxX + 1);
-  const binH = msg.config.field_width_mm / (info.maxY + 1);
-  const xIndex = clamp(Math.round((wx + msg.config.field_length_mm / 2) / binW - 0.5), 0, info.maxX);
-  const yIndex = clamp(Math.round((wy + msg.config.field_width_mm / 2) / binH - 0.5), 0, info.maxY);
+  const x_range = msg.config.field_length_mm + msg.config.goal_depth_mm * 2 - msg.config.robot_length_mm;
+  const y_range = msg.config.field_width_mm - msg.config.robot_length_mm;
+  const wx = (px - 1 - msg.gd) / msg.scale - x_range / 2;
+  const wy = y_range / 2 - (py - 1) / msg.scale;
+  const binW = x_range / (info.maxX + 1);
+  const binH = y_range / (info.maxY + 1);
+  const xIndex = clamp(Math.round((wx + x_range / 2) / binW - 0.5), 0, info.maxX);
+  const yIndex = clamp(Math.round((wy + y_range / 2) / binH - 0.5), 0, info.maxY);
   return [xIndex, yIndex];
 }
 
@@ -112,8 +114,10 @@ async function renderQState(msg) {
   const ctx = canvas.getContext('2d');
 
   const range = info.maxMaxVal - info.minMaxVal || 1;
-  const binW = rosetteMode ? msg.config.field_length_mm : msg.config.field_length_mm / (info.maxX + 1);
-  const binH = rosetteMode ? msg.config.field_width_mm : msg.config.field_width_mm / (info.maxY + 1);
+  const x_range = msg.config.field_length_mm + msg.config.goal_depth_mm * 2 - msg.config.robot_length_mm;
+  const y_range = msg.config.field_width_mm - msg.config.robot_length_mm;
+  const binW = rosetteMode ? msg.config.field_length_mm : x_range / (info.maxX + 1);
+  const binH = rosetteMode ? msg.config.field_width_mm : y_range / (info.maxY + 1);
   const maxR = Math.min(binW, binH) * 0.48;
   const innerR = maxR * 0.2;
   const ringW = (maxR - innerR) / (info.maxP1 - info.minP1 + 1);
@@ -134,13 +138,7 @@ async function renderQState(msg) {
     for (let y = yStart; y <= yEnd; y++) {
       const [cx, cy] = rosetteMode
         ? center
-        : fieldToCanvas(
-            msg.config,
-            msg.scale,
-            msg.gd,
-            (x + 0.5) * binW - msg.config.field_length_mm / 2,
-            (y + 0.5) * binH - msg.config.field_width_mm / 2,
-          );
+        : fieldToCanvas(msg.config, msg.scale, msg.gd, (x + 0.5) * binW - x_range / 2, (y + 0.5) * binH - y_range / 2);
 
       for (let h = 0; h <= info.maxH; h++) {
         const theta = h * dTheta;
