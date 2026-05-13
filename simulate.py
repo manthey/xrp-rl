@@ -271,7 +271,11 @@ def generate_distance_reading(robot, robots_dict, ball):
     rx += dx * ROBOT_DISTANCE_SENSOR_OFFSET
     ry += dy * ROBOT_DISTANCE_SENSOR_OFFSET
     distance_mm = 655350
+    if not point_in_field(rx, ry):
+        distance_mm = 0
     for check in range(DISTANCE_SENSOR_CHECKS):
+        if distance_mm <= 0:
+            break
         theta = heading_rad + ((check / (DISTANCE_SENSOR_CHECKS - 1)) - 0.5) * \
             2 * math.radians(ROBOT_DISTANCE_SENSOR_WIDTH_DEG)
         dx = math.cos(theta)
@@ -286,7 +290,7 @@ def generate_distance_reading(robot, robots_dict, ball):
                 continue
             t = ray_to_robot(rx, ry, dx, dy, other)
             distance_mm = min(distance_mm, t) if t is not None and t > 0 else distance_mm
-    if distance_mm >= 655350 or distance_mm < 0:
+    if distance_mm >= 655350:
         return 65535
     if distance_mm < 20:
         distance_mm = 20
@@ -297,7 +301,7 @@ def generate_distance_reading(robot, robots_dict, ball):
     far_noise = 800
     if random.random() < 0.15 * (distance_mm - far_noise) / (1000 - far_noise):
         return 65535
-    return max(0, min(65535, distance_mm / 10.0))
+    return max(0, min(65535, distance_mm / 10))
 
 
 def generate_reflectance_readings(robot):
@@ -718,6 +722,7 @@ def run_summary():
     return {'red': len([r for r in recent if r == 'r']),
             'blue': len([b for b in recent if b == 'b'])}
 
+
 def training_state_msg():
     return {
         'type': 'training_state',
@@ -944,7 +949,8 @@ async def robot_websocket_endpoint(ws: WebSocket):
             await ws.close()
             return
         robot_id = hello['robot_id']
-        ensure_virtual_robot(robot_id, hello.get('team', 'red'), hello.get('pos', 'high'), role=hello.get('role'))
+        ensure_virtual_robot(robot_id, hello.get('team', 'red'),
+                             hello.get('pos', 'high'), role=hello.get('role'))
         previous = robot_websocket_clients.get(robot_id)
         if previous is not None and previous is not ws:
             try:

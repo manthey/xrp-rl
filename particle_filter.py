@@ -115,6 +115,8 @@ class ParticleFilter:
         dy = math.sin(hr)
         sx = p.x + dx * ROBOT_DISTANCE_SENSOR_OFFSET
         sy = p.y + dy * ROBOT_DISTANCE_SENSOR_OFFSET
+        if not point_in_field(sx, sy):
+            return 0
         return ray_to_field_boundary(sx, sy, dx, dy)
 
     def reflectance_sensor_positions(self, p):
@@ -173,7 +175,7 @@ class ParticleFilter:
                 elif observed and not exp_tape:
                     w *= 0.05
                 elif not observed and exp_tape:
-                    w *= 0.4
+                    w *= 0.05  # 0.4
             imu_heading = (self.prev_imu_deg + p.imu_offset) % 360
             err = ((((p.heading - imu_heading) % 360) + 540) % 360) - 180
             w *= math.exp(-0.5 * (err / IMU_RELATIVE_SIGMA_DEG) ** 2)
