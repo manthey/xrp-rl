@@ -665,9 +665,12 @@ def update_rewards(dt):  # noqa
             terminal = True
             elapsed = sim_state['sim_time'] - sim_state['sim_start']
             win_score = 100 + 50 * (1 - min(1, elapsed / EPISODE_MAXIMUM_TIME))
-            reward += ((3 if 'o' in role else (1 if 'd' in role else 2))
-                       if scored_team == team else
-                       (-3 if 'd' in role else -1)) * win_score
+            ww, lw = 2, -1
+            ww, lw = 3, -1 if 'f' in role else ww, lw
+            ww, lw = 1, -1 if 'm' in role else ww, lw
+            ww, lw = 1, -2 if 'd' in role else ww, lw
+            ww, lw = 1, -3 if 'g' in role else ww, lw
+            reward += (ww if scored_team == team else lw) * win_score
         entry = robot_rewards.setdefault(robot_id, {'reward': 0.0, 'terminal_id': 0})
         entry['reward'] += reward
         if terminal:

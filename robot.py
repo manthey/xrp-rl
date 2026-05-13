@@ -35,7 +35,10 @@ if is_simulation:  # noqa
     parser.add_argument('--simulator', default='http://127.0.0.1:8080')
     parser.add_argument('--robot-id', '--id', '--name', default='RBV-XRP2')
     parser.add_argument('--team', default='red', choices=['red', 'blue'])
-    parser.add_argument('--role', help='comma separated offense, defense, center, wing, left, right')
+    parser.add_argument(
+        '--role', help='comma separated: one of goal, defense, midfield, '
+        'offense (default), forward; one of center, wing, utility (default), '
+        'left, right')
     parser.add_argument('--pos', default='high', choices=['high', 'low'])
     parser.add_argument('--mode', default='train', choices=['manual', 'rl', 'train'])
     parser.add_argument('--world', default='robot,ball')
