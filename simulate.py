@@ -23,11 +23,12 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
-from util import (BALL_RADIUS_MM, CORNER_MEET, CORNER_RADIUS_MM,
+from util import (BALL_RADIUS_MM, CORNER_BEVEL, CORNER_MEET, CORNER_RADIUS_MM,
                   FIELD_BOUNDARY_CORNERS, FIELD_BOUNDARY_SEGMENTS,
-                  FIELD_CONFIG, FIELD_LENGTH_MM, FIELD_WIDTH_MM, GOAL_WIDTH_MM,
-                  INERTIA_MMPS_PER_TICK, MAX_WHEEL_SPEED_MMPS, MM_PER_TICK,
-                  ROBOT_CORNER_RADIUS_MM, ROBOT_DISTANCE_SENSOR_OFFSET,
+                  FIELD_CONFIG, FIELD_LENGTH_MM, FIELD_WIDTH_MM, GOAL_DEPTH_MM,
+                  GOAL_WIDTH_MM, INERTIA_MMPS_PER_TICK, MAX_WHEEL_SPEED_MMPS,
+                  MM_PER_TICK, ROBOT_CORNER_RADIUS_MM,
+                  ROBOT_DISTANCE_SENSOR_OFFSET,
                   ROBOT_DISTANCE_SENSOR_WIDTH_DEG, ROBOT_LENGTH_MM,
                   ROBOT_REFLECTANCE_SENSOR_OFFSET,
                   ROBOT_REFLECTANCE_SENSOR_SIDE, ROBOT_WIDTH_MM, TAPE_LINES,
@@ -35,13 +36,26 @@ from util import (BALL_RADIUS_MM, CORNER_MEET, CORNER_RADIUS_MM,
                   closest_point_on_rounded_rect, point_in_field, ray_to_ball,
                   ray_to_field_boundary, ray_to_robot, robot_corners)
 
-FRICTION_PER_SEC = 60.0
+FRICTION_PER_SEC = 60
 RESTITUTION = 0.7
 SIM_HZ = 60
-EPISODE_RESTART_DELAY_SEC = 1.0
-EPISODE_MAXIMUM_TIME = 300.0
+EPISODE_RESTART_DELAY_SEC = 1
+EPISODE_MAXIMUM_TIME = 300
 BROADCAST_HZ = 60
 DISTANCE_SENSOR_CHECKS = 7
+FIELD_HALF_LEN = FIELD_LENGTH_MM / 2
+FIELD_HALF_WID = FIELD_WIDTH_MM / 2
+FIELD_GOAL_HALF = GOAL_WIDTH_MM / 2
+FIELD_GOAL_BACK = FIELD_HALF_LEN + GOAL_DEPTH_MM
+FIELD_INNER_X = FIELD_HALF_LEN - CORNER_RADIUS_MM
+FIELD_INNER_Y = FIELD_GOAL_HALF
+FIELD_SHARP_CORNERS = (
+    (FIELD_HALF_LEN, FIELD_GOAL_HALF), (FIELD_HALF_LEN, -FIELD_GOAL_HALF),
+    (-FIELD_HALF_LEN, FIELD_GOAL_HALF), (-FIELD_HALF_LEN, -FIELD_GOAL_HALF),
+    (CORNER_MEET, FIELD_HALF_WID), (CORNER_MEET, -FIELD_HALF_WID),
+    (-CORNER_MEET, FIELD_HALF_WID), (-CORNER_MEET, -FIELD_HALF_WID),
+)
+
 
 ball_state: dict = {
     'world_x_mm': 0.0,
@@ -360,40 +374,94 @@ def robots_overlap(r1, r2):
     return False
 
 
-def constrain_robot_to_field(robot):
+def constrain_robot_to_field(robot):  # noqa
     rx = robot.get('world_x_mm', 0.0)
     ry = robot.get('world_y_mm', 0.0)
     rh = math.radians(robot.get('world_heading_deg', 0.0))
-    half_len = ROBOT_LENGTH_MM / 2
-    half_wid = ROBOT_WIDTH_MM / 2
-    corners = robot_corners(rx, ry, rh, half_len, half_wid)
-    if all(point_in_field(cx, cy) for cx, cy in corners):
-        return
-    max_shift = max(ROBOT_LENGTH_MM, ROBOT_WIDTH_MM)
-    max_h = math.radians(5)
-    best_rx, best_ry, best_rh = rx, ry, rh
-    best_distance = float('inf')
-    while max_shift >= 0.5:
-        last_rx, last_ry, last_rh = best_rx, best_ry, best_rh
-        for oy in range(3):
-            for ox in range(3):
-                for oh in range(3):
-                    test_x = last_rx + (ox if ox != 2 else -1) * max_shift
-                    test_y = last_ry + (oy if oy != 2 else -1) * max_shift
-                    test_h = last_rh + (oh if oh != 2 else -1) * max_h
-                    test_corners = robot_corners(test_x, test_y, test_h, half_len, half_wid)
-                    if all(point_in_field(cx, cy) for cx, cy in test_corners):
-                        dist = (test_x - rx) ** 2 + (test_y - ry) ** 2
-                        if dist < best_distance:
-                            best_distance = dist
-                            best_rx = test_x
-                            best_ry = test_y
-                            best_rh = test_h
-        max_shift /= 2
-        max_h /= 2
-    robot['world_x_mm'] = best_rx
-    robot['world_y_mm'] = best_ry
-    robot['world_heading_deg'] = math.degrees(best_rh)
+    core_l = ROBOT_LENGTH_MM / 2.0 - ROBOT_CORNER_RADIUS_MM
+    core_w = ROBOT_WIDTH_MM / 2.0 - ROBOT_CORNER_RADIUS_MM
+    turn_scale = 1.0 / (core_l * core_l + core_w * core_w + ROBOT_CORNER_RADIUS_MM ** 2)
+    for _ in range(16):
+        cos_h = math.cos(rh)
+        sin_h = math.sin(rh)
+        hit = None
+        for lx, ly in ((-core_l, -core_w), (core_l, -core_w),
+                       (core_l, core_w), (-core_l, core_w)):
+            cx = rx + lx * cos_h - ly * sin_h
+            cy = ry + lx * sin_h + ly * cos_h
+            ax = abs(cx)
+            ay = abs(cy)
+            sx = 1 if cx >= 0 else -1
+            sy = 1 if cy >= 0 else -1
+            tests = []
+            if ax < CORNER_MEET and ay + ROBOT_CORNER_RADIUS_MM > FIELD_HALF_WID:
+                tests.append((ay + ROBOT_CORNER_RADIUS_MM - FIELD_HALF_WID,
+                              0.0, -sy, cx, cy + sy * ROBOT_CORNER_RADIUS_MM))
+            if ay < FIELD_GOAL_HALF and ax + ROBOT_CORNER_RADIUS_MM > FIELD_GOAL_BACK:
+                tests.append((ax + ROBOT_CORNER_RADIUS_MM - FIELD_GOAL_BACK,
+                              -sx, 0.0, cx + sx * ROBOT_CORNER_RADIUS_MM, cy))
+            if (FIELD_HALF_LEN < ax < FIELD_GOAL_BACK and
+                    ay + ROBOT_CORNER_RADIUS_MM > FIELD_GOAL_HALF):
+                tests.append((ay + ROBOT_CORNER_RADIUS_MM - FIELD_GOAL_HALF,
+                              0.0, -sy, cx, cy + sy * ROBOT_CORNER_RADIUS_MM))
+            if (FIELD_HALF_WID - CORNER_BEVEL < ay < FIELD_HALF_WID and
+                    ax + ROBOT_CORNER_RADIUS_MM > CORNER_MEET):
+                tests.append((ax + ROBOT_CORNER_RADIUS_MM - CORNER_MEET,
+                              -sx, 0.0, cx + sx * ROBOT_CORNER_RADIUS_MM, cy))
+            ox = cx - sx * FIELD_INNER_X
+            oy = cy - sy * FIELD_INNER_Y
+            dist = math.sqrt(ox * ox + oy * oy)
+            if dist > 0:
+                px = sx * FIELD_INNER_X + ox * CORNER_RADIUS_MM / dist
+                if ox * sx >= 0 and oy * sy >= 0 and abs(px) >= CORNER_MEET:
+                    depth = dist + ROBOT_CORNER_RADIUS_MM - CORNER_RADIUS_MM
+                    if depth > 0:
+                        nx = -ox / dist
+                        ny = -oy / dist
+                        tests.append((depth, nx, ny,
+                                      cx - nx * ROBOT_CORNER_RADIUS_MM,
+                                      cy - ny * ROBOT_CORNER_RADIUS_MM))
+            if tests:
+                best = max(tests, key=lambda item: item[0])
+                if hit is None or best[0] > hit[0]:
+                    hit = best
+        for px, py in FIELD_SHARP_CORNERS:
+            dx = px - rx
+            dy = py - ry
+            lx = dx * cos_h + dy * sin_h
+            ly = -dx * sin_h + dy * cos_h
+            ax = abs(lx)
+            ay = abs(ly)
+            ex = max(0.0, ax - core_l)
+            ey = max(0.0, ay - core_w)
+            dist = math.sqrt(ex * ex + ey * ey)
+            if dist >= ROBOT_CORNER_RADIUS_MM:
+                continue
+            if dist > 0.0:
+                nlx = ex / dist if lx >= 0.0 else -ex / dist
+                nly = ey / dist if ly >= 0.0 else -ey / dist
+                depth = ROBOT_CORNER_RADIUS_MM - dist
+            elif core_l - ax < core_w - ay:
+                nlx, nly, depth = (1.0 if lx >= 0.0 else -
+                                   1.0), 0.0, ROBOT_CORNER_RADIUS_MM + core_l - ax
+            else:
+                nlx, nly, depth = 0.0, (1.0 if ly >= 0.0 else -
+                                        1.0), ROBOT_CORNER_RADIUS_MM + core_w - ay
+            nx = -(nlx * cos_h - nly * sin_h)
+            ny = -(nlx * sin_h + nly * cos_h)
+            if hit is None or depth > hit[0]:
+                hit = (depth, nx, ny, px, py)
+        if hit is None or hit[0] <= 0.01:
+            break
+        depth, nx, ny, px, py = hit
+        arm = (px - rx) * ny - (py - ry) * nx
+        push = depth / (1.0 + arm * arm * turn_scale)
+        rx += nx * push
+        ry += ny * push
+        rh += arm * push * turn_scale
+    robot['world_x_mm'] = rx
+    robot['world_y_mm'] = ry
+    robot['world_heading_deg'] = math.degrees(rh) % 360.0
 
 
 def resolve_robot_overlaps():

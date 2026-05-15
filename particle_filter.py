@@ -132,8 +132,6 @@ class ParticleFilter:
         return lx, ly, rx, ry
 
     def expected_on_tape(self, sx, sy):
-        if not point_in_field(sx, sy):
-            return False
         for t in TAPE_LINES:
             if abs(sx - t['x_mm']) < TAPE_WIDTH_MM / 2:
                 return True

@@ -225,8 +225,8 @@ def robot_corners(rx, ry, heading_rad, half_len, half_wid, corner_r=ROBOT_CORNER
         (inner_half_len, half_wid, -inner_half_len, half_wid),
         (-half_len, inner_half_wid, -half_len, -inner_half_wid),
     ]
-    for x1, y1, x2, y2 in straight_segments:
-        for t in (0.0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0):
+    for t in (0.0, 1.0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875):
+        for x1, y1, x2, y2 in straight_segments:
             lx = x1 + t * (x2 - x1)
             ly = y1 + t * (y2 - y1)
             wx = rx + lx * cos_h - ly * sin_h
